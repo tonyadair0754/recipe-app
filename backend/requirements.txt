@@ -4,3 +4,4 @@ sqlalchemy
 pillow
 google-genai
 python-dotenv
+python-multipart
