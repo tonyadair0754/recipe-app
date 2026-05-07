@@ -32,7 +32,7 @@ pip install fastapi uvicorn sqlalchemy pillow google-genai python-dotenv
 ```
 
 Create a `.env` file in the backend folder:
-GEMINI_API_KEY=AIzaSyBpNYFVdnOBSqmqeCQn7s6f9h9xlnA1UAk
+GEMINI_API_KEY=your_key_here
 
 Start the server:
 
