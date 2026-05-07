@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+sqlalchemy
+pillow
+google-genai
+python-dotenv
