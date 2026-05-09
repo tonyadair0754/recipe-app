@@ -5,7 +5,7 @@ import { uploadRecipeImage, saveRecipe } from "../api";
 const toItems = (arr) =>
   (arr || []).map((text, i) => ({ id: `item-${Date.now()}-${i}`, text }));
 
-export default function HomeView({ onSaved }) {
+export default function HomeView({ onSaved, token }) {
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,7 +24,7 @@ export default function HomeView({ onSaved }) {
     setLoading(true);
     setRecipe(null);
     try {
-      const data = await uploadRecipeImage(file);
+      const data = await uploadRecipeImage(file, token);
       setRecipe(data);
       setIngredients(toItems(data.ingredients));
       setInstructions(toItems(data.instructions));
@@ -42,7 +42,7 @@ export default function HomeView({ onSaved }) {
         ingredients: ingredients.map((i) => i.text),
         instructions: instructions.map((i) => i.text),
         notes: recipe.notes || [],
-      });
+      }, token);
       setRecipe(null);
       setFile(null);
       onSaved();
@@ -63,7 +63,7 @@ export default function HomeView({ onSaved }) {
         ingredients: manualIngredients.map((i) => i.text).filter(Boolean),
         instructions: manualInstructions.map((i) => i.text).filter(Boolean),
         notes: [],
-      });
+      }, token);
       setManualTitle("");
       setManualActive(false);
       setManualIngredients([]);

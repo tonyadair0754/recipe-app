@@ -5,7 +5,7 @@ import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe } from "../api"
 const toItems = (arr) =>
   (arr || []).map((text, i) => ({ id: `item-${Date.now()}-${i}`, text }));
 
-export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate }) {
+export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate, token }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editIngredients, setEditIngredients] = useState([]);
@@ -33,7 +33,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         instructions: editInstructions.map((i) => i.text),
         notes: recipe.notes || [],
         language: recipe.language,
-      });
+      }, token);
       onUpdated({
         ...recipe,
         title: editTitle,
@@ -49,7 +49,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const handleDelete = async () => {
     if (!window.confirm("Delete this recipe?")) return;
     try {
-      await deleteRecipe(recipe.id);
+      await deleteRecipe(recipe.id, token);
       onDeleted();
     } catch (e) { alert("Delete failed"); }
   };
@@ -58,7 +58,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     if (translated) { setShowingTranslation(true); return; }
     setTranslating(true);
     try {
-      const data = await translateRecipe(recipe.id);
+      const data = await translateRecipe(recipe.id, "Korean", token);
       setTranslated(data);
       setShowingTranslation(true);
     } catch (e) {
@@ -76,7 +76,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         instructions: translated.instructions,
         notes: [],
         language: "ko",
-      });
+      }, token);
       setTranslationSaved(true);
       onSaved();
       onNavigate(saved);

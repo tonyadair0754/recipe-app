@@ -5,3 +5,5 @@ pillow
 google-genai
 python-dotenv
 python-multipart
+supabase
+psycopg2-binary

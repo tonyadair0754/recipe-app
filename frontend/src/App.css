@@ -533,3 +533,71 @@ textarea:focus { border-color: #2d6a4f; }
   margin-left: 6px;
   vertical-align: middle;
 }
+
+/* ── Auth styles ── */
+.auth-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f0;
+  padding: 20px;
+}
+
+.auth-card {
+  background: #fff;
+  border: 0.5px solid #e8e8e2;
+  border-radius: 14px;
+  padding: 36px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-title {
+  font-size: 20px;
+  font-weight: 500;
+  color: #1a1a1a;
+  margin-bottom: 6px;
+  letter-spacing: -0.3px;
+}
+
+.auth-sub {
+  font-size: 13px;
+  color: #999;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.auth-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.auth-message {
+  font-size: 13px;
+  color: #2d6a4f;
+  background: #f4fbf6;
+  border: 0.5px solid #b7e4c7;
+  border-radius: 7px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.auth-error {
+  font-size: 13px;
+  color: #c0392b;
+  background: #fdf0ef;
+  border: 0.5px solid #e8b4b0;
+  border-radius: 7px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.auth-switch {
+  text-align: center;
+  font-size: 13px;
+  color: #999;
+  margin-top: 16px;
+}

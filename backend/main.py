@@ -1,9 +1,11 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from google import genai
 from google.genai import types
+from supabase import create_client
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -12,17 +14,25 @@ import os
 import json
 
 load_dotenv()
+
+# ── Gemini ──
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- Database setup ---
-DATABASE_URL = "sqlite:///./recipes.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# ── Supabase (for auth) ──
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+# ── PostgreSQL (for recipes) ──
+engine = create_engine(os.getenv("DATABASE_URL"))
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
 class Recipe(Base):
     __tablename__ = "recipes"
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, nullable=False)
     title = Column(String)
     ingredients = Column(String)
     instructions = Column(String)
@@ -32,7 +42,18 @@ class Recipe(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# --- App setup ---
+# ── Auth ──
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        response = supabase.auth.get_user(token)
+        return response.user
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+# ── App ──
 app = FastAPI()
 
 app.add_middleware(
@@ -47,8 +68,41 @@ app.add_middleware(
 def home():
     return {"message": "Backend running"}
 
+# ── Auth endpoints ──
+@app.post("/auth/signup")
+def signup(data: dict):
+    try:
+        response = supabase.auth.sign_up({
+            "email": data["email"],
+            "password": data["password"]
+        })
+        return {"message": "Signed up successfully. Please check your email to confirm your account."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/auth/login")
+def login(data: dict):
+    try:
+        response = supabase.auth.sign_in_with_password({
+            "email": data["email"],
+            "password": data["password"]
+        })
+        return {
+            "access_token": response.session.access_token,
+            "user": {
+                "id": response.user.id,
+                "email": response.user.email
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+# ── Upload ──
 @app.post("/upload")
-async def upload(file: UploadFile = File(...)):
+async def upload(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user)
+):
     try:
         contents = await file.read()
         image_bytes = types.Part.from_bytes(data=contents, mime_type=file.content_type)
@@ -84,11 +138,13 @@ async def upload(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ── Recipes ──
 @app.post("/recipes")
-def save_recipe(data: dict):
+def save_recipe(data: dict, current_user=Depends(get_current_user)):
     db = SessionLocal()
     try:
         recipe = Recipe(
+            user_id=current_user.id,
             title=data.get("title", "Untitled"),
             ingredients=json.dumps(data.get("ingredients", [])),
             instructions=json.dumps(data.get("instructions", [])),
@@ -111,10 +167,12 @@ def save_recipe(data: dict):
         db.close()
 
 @app.get("/recipes")
-def get_recipes():
+def get_recipes(current_user=Depends(get_current_user)):
     db = SessionLocal()
     try:
-        recipes = db.query(Recipe).order_by(Recipe.created_at.desc()).all()
+        recipes = db.query(Recipe).filter(
+            Recipe.user_id == current_user.id
+        ).order_by(Recipe.created_at.desc()).all()
         return [
             {
                 "id": r.id,
@@ -130,11 +188,35 @@ def get_recipes():
     finally:
         db.close()
 
-@app.delete("/recipes/{recipe_id}")
-def delete_recipe(recipe_id: int):
+@app.put("/recipes/{recipe_id}")
+def update_recipe(recipe_id: int, data: dict, current_user=Depends(get_current_user)):
     db = SessionLocal()
     try:
-        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id
+        ).first()
+        if not recipe:
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        recipe.title = data.get("title", recipe.title)
+        recipe.ingredients = json.dumps(data.get("ingredients", []))
+        recipe.instructions = json.dumps(data.get("instructions", []))
+        recipe.notes = json.dumps(data.get("notes", []))
+        recipe.language = data.get("language", recipe.language)
+        db.commit()
+        db.refresh(recipe)
+        return {"message": "Updated"}
+    finally:
+        db.close()
+
+@app.delete("/recipes/{recipe_id}")
+def delete_recipe(recipe_id: int, current_user=Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id
+        ).first()
         if not recipe:
             raise HTTPException(status_code=404, detail="Recipe not found")
         db.delete(recipe)
@@ -143,28 +225,14 @@ def delete_recipe(recipe_id: int):
     finally:
         db.close()
 
-@app.put("/recipes/{recipe_id}")
-def update_recipe(recipe_id: int, data: dict):
-    db = SessionLocal()
-    try:
-        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-        if not recipe:
-            raise HTTPException(status_code=404, detail="Recipe not found")
-        recipe.title = data.get("title", recipe.title)
-        recipe.ingredients = json.dumps(data.get("ingredients", []))
-        recipe.instructions = json.dumps(data.get("instructions", []))
-        recipe.notes = json.dumps(data.get("notes", []))
-        db.commit()
-        db.refresh(recipe)
-        return {"message": "Updated"}
-    finally:
-        db.close()
-
 @app.post("/recipes/{recipe_id}/translate")
-def translate_recipe(recipe_id: int, data: dict):
+def translate_recipe(recipe_id: int, data: dict, current_user=Depends(get_current_user)):
     db = SessionLocal()
     try:
-        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id
+        ).first()
         if not recipe:
             raise HTTPException(status_code=404, detail="Recipe not found")
 
