@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { fetchRecipes } from "./api";
 import { useAuth } from "./context/AuthContext";
 import HomeView from "./views/HomeView";
@@ -13,17 +13,16 @@ export default function App() {
   const [saved, setSaved] = useState([]);
   const [selected, setSelected] = useState(null);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (token) loadRecipes();
-  }, [token]);
-
-  const loadRecipes = async () => {
+  const loadRecipes = useCallback(async () => {
     try {
       const data = await fetchRecipes(token);
       setSaved(data);
     } catch (e) { console.log(e); }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (token) loadRecipes();
+  }, [token, loadRecipes]);
 
   const goHome = () => setView("home");
   const goCollection = () => { setView("collection"); setSelected(null); };
