@@ -13,6 +13,7 @@ export default function App() {
   const [saved, setSaved] = useState([]);
   const [selected, setSelected] = useState(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (token) loadRecipes();
   }, [token]);
