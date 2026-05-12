@@ -8,7 +8,7 @@ import AuthView from "./views/AuthView";
 import "./App.css";
 
 export default function App() {
-  const { user, token, logout, loading: authLoading } = useAuth();
+  const { user, token, logout, loading: authLoading, wakingUp } = useAuth();
   const [view, setView] = useState("home");
   const [saved, setSaved] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -41,6 +41,16 @@ export default function App() {
             <span className="loading-dot" />
             <span className="loading-dot" />
           </div>
+          {wakingUp && (
+            <div style={{ marginTop: "24px", maxWidth: "280px", margin: "24px auto 0", textAlign: "center" }}>
+              <p style={{ fontSize: "14px", color: "#555", lineHeight: "1.6", marginBottom: "8px" }}>
+                The server is waking up after a period of inactivity.
+              </p>
+              <p style={{ fontSize: "13px", color: "#aaa", lineHeight: "1.6" }}>
+                This usually takes under a minute — thank you for your patience.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     );

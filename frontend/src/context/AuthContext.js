@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [wakingUp, setWakingUp] = useState(false);
 
   useEffect(() => {
     const savedToken = localStorage.getItem("rl_token");
@@ -15,8 +16,29 @@ export function AuthProvider({ children }) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
     }
-    setLoading(false);
+    checkBackendHealth();
   }, []);
+
+  const checkBackendHealth = async () => {
+    const BASE = process.env.REACT_APP_API_URL || "http://127.0.0.1:800";
+
+    // Show waking up message after 2 seconds of no response
+    const wakeTimer = setTimeout(() => setWakingUp(true), 2000);
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      
+      await fetch(`${BASE}/`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+    } catch (e) {
+      // Backend unreachable — still let the app load
+    } finally {
+      clearTimeout(wakeTimer);
+      setWakingUp(false);
+      setLoading(false);
+    }
+  };
 
   const login = async (email, password) => {
     const data = await loginUser(email, password);
