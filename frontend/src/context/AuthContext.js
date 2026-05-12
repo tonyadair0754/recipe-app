@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import { loginUser, signupUser } from "../api";
+import { loginUser, signupUser, setupInterceptors } from "../api";
 
 const AuthContext = createContext(null);
 
@@ -9,6 +9,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [wakingUp, setWakingUp] = useState(false);
 
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem("rl_token");
+    localStorage.removeItem("rl_user");
+  };
+
   useEffect(() => {
     const savedToken = localStorage.getItem("rl_token");
     const savedUser = localStorage.getItem("rl_user");
@@ -16,6 +23,7 @@ export function AuthProvider({ children }) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
     }
+    setupInterceptors(logout);
     checkBackendHealth();
   }, []);
 
@@ -51,13 +59,6 @@ export function AuthProvider({ children }) {
 
   const signup = async (email, password) => {
     await signupUser(email, password);
-  };
-
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem("rl_token");
-    localStorage.removeItem("rl_user");
   };
 
   return (
