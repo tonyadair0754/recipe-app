@@ -3,7 +3,7 @@ import axios from "axios";
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 
 // Create a named axios instance instead of using the default
-const api = axios.create({ baseURL: API_RUL });
+const api = axios.create({ baseURL: API_URL });
 
 const authHeaders = (token) => ({
   headers: { Authorization: `Bearer ${token}` }
@@ -14,7 +14,7 @@ export function setupInterceptors(logoutFn) {
   api.interceptors.response.use(
     (response) => response,
     (error) => {
-      if (error.response?.status === 401 && localStorage.getItem("r1_token")) {
+      if (error.response?.status === 401 && localStorage.getItem("rl_token")) {
         logoutFn();
       }
       return Promise.reject(error);
