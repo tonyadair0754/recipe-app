@@ -23,6 +23,7 @@ export default function HomeView({ onSaved }) {
 
   const handleUpload = async () => {
     if (!file) return;
+    console.log("Token at upload time:", token);
     setLoading(true);
     setRecipe(null);
     try {

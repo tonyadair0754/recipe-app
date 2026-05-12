@@ -134,7 +134,7 @@ async def upload(
         return data
 
     except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Could not parse recipe structure")
+        raise HTTPException(status_code=500, detail="Could not parse recipe structure. This usually happens because the image is difficult to read.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
