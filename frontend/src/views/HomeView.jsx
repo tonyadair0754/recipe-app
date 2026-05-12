@@ -1,11 +1,13 @@
 import { useState } from "react";
 import RecipeEditor from "../components/RecipeEditor";
 import { uploadRecipeImage, saveRecipe } from "../api";
+import { useAuth } from "../context/AuthContext";
 
 const toItems = (arr) =>
   (arr || []).map((text, i) => ({ id: `item-${Date.now()}-${i}`, text }));
 
-export default function HomeView({ onSaved, token }) {
+export default function HomeView({ onSaved }) {
+  const { token } = useAuth();
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
