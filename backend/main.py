@@ -38,7 +38,7 @@ class Recipe(Base):
     instructions = Column(String)
     notes = Column(String)
     language = Column(String, default="en")
-    images_url = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
