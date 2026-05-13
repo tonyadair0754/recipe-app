@@ -30,6 +30,13 @@ export default function CollectionView({ saved, onSelect }) {
         <div className="recipe-grid">
           {filtered.map((r) => (
             <div key={r.id} className="recipe-card" onClick={() => onSelect(r)}>
+              {r.image_url && (
+                <img
+                  src={r.image_url}
+                  alt={r.title}
+                  style={{ width: "100%", height: "140px", objectFit: "cover", borderRadius: "6px", marginBottom: "10px" }}
+                />
+              )}
               <h3>{r.title}</h3>
               <p className="recipe-card-meta">
                 {r.ingredients.length} ingredients · {r.instructions.length} steps

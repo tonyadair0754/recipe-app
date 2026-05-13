@@ -39,6 +39,13 @@ export const uploadRecipeImage = async (file, token) => {
   return res.data;
 };
 
+export const uploadRecipeImage_toStorage = async (file, token) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await api.post("/upload-image", formData, authHeaders(token));
+  return res.data;
+};
+
 export const fetchRecipes = async (token) => {
   const res = await api.get(`/recipes`, authHeaders(token));
   return res.data;

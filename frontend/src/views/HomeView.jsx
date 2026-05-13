@@ -1,6 +1,6 @@
 import { useState } from "react";
 import RecipeEditor from "../components/RecipeEditor";
-import { uploadRecipeImage, saveRecipe } from "../api";
+import { uploadRecipeImage, saveRecipe, uploadRecipeImage_toStorage } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 const toItems = (arr) =>
@@ -18,6 +18,7 @@ export default function HomeView({ onSaved }) {
   const [manualActive, setManualActive] = useState(false);
   const [manualIngredients, setManualIngredients] = useState([]);
   const [manualInstructions, setManualInstructions] = useState([]);
+  const [imageToSave, setImageToSave] = useState(null);
 
   const handleFile = (f) => { if (f) setFile(f); };
 
@@ -40,14 +41,21 @@ export default function HomeView({ onSaved }) {
 
   const handleSaveUploaded = async () => {
     try {
+      let image_url = null;
+      if (imageToSave) {
+        const result = await uploadRecipeImage_toStorage(imageToSave, token);
+        image_url = result.image_url;
+      }
       await saveRecipe({
         title: recipe.title,
         ingredients: ingredients.map((i) => i.text),
         instructions: instructions.map((i) => i.text),
         notes: recipe.notes || [],
+        image_url,
       }, token);
       setRecipe(null);
       setFile(null);
+      setImageToSave(null);
       onSaved();
     } catch (e) { alert("Save failed"); }
   };
@@ -181,6 +189,8 @@ export default function HomeView({ onSaved }) {
             onSave={handleSaveUploaded}
             onCancel={() => { setRecipe(null); setFile(null); }}
             saveLabel="Save to collection"
+            imageFile={file}
+            onImageChange={setImageToSave}
           />
         </div>
       )}

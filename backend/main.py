@@ -38,6 +38,7 @@ class Recipe(Base):
     instructions = Column(String)
     notes = Column(String)
     language = Column(String, default="en")
+    images_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
@@ -137,6 +138,29 @@ async def upload(
         raise HTTPException(status_code=500, detail="Could not parse recipe structure. This usually happens because the image is difficult to read.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/upload-image")
+async def upload_image(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user)
+):
+    try:
+        contents = await file.read()
+        # Give each file a unique path: userId/timestamp_filename
+        # This prevents collisions if two users upload a file with the same name
+        file_path = f"{current_user.id}/{datetime.utcnow().timestamp()}_{file.filename}"
+        
+        supabase.storage.from_("recipe-images").upload(
+            file_path,
+            contents,
+            {"content-type": file.content_type}
+        )
+        
+        # Get the public URL back so the frontend can display it
+        url = supabase.storage.from_("recipe-images").get_public_url(file_path)
+        return {"image_url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ── Recipes ──
 @app.post("/recipes")
@@ -150,6 +174,7 @@ def save_recipe(data: dict, current_user=Depends(get_current_user)):
             instructions=json.dumps(data.get("instructions", [])),
             notes=json.dumps(data.get("notes", [])),
             language=data.get("language", "en"),
+            image_url=data.get("image_url", None),
         )
         db.add(recipe)
         db.commit()
@@ -161,6 +186,7 @@ def save_recipe(data: dict, current_user=Depends(get_current_user)):
             "instructions": json.loads(recipe.instructions),
             "notes": json.loads(recipe.notes),
             "language": recipe.language,
+            "image_url": recipe.image_url,
             "created_at": recipe.created_at,
         }
     finally:
@@ -181,6 +207,7 @@ def get_recipes(current_user=Depends(get_current_user)):
                 "instructions": json.loads(r.instructions),
                 "notes": json.loads(r.notes),
                 "language": r.language,
+                "image_url": r.image_url,
                 "created_at": r.created_at,
             }
             for r in recipes
@@ -203,6 +230,7 @@ def update_recipe(recipe_id: int, data: dict, current_user=Depends(get_current_u
         recipe.instructions = json.dumps(data.get("instructions", []))
         recipe.notes = json.dumps(data.get("notes", []))
         recipe.language = data.get("language", recipe.language)
+        recipe.image_url = data.get("image_url", recipe.image_url)
         db.commit()
         db.refresh(recipe)
         return {"message": "Updated"}

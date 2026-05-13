@@ -1,15 +1,18 @@
 import { useState } from "react";
 import RecipeEditor from "../components/RecipeEditor";
-import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe } from "../api";
+import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeImage_toStorage } from "../api";
+import { useAuth } from "../context/AuthContext";
 
 const toItems = (arr) =>
   (arr || []).map((text, i) => ({ id: `item-${Date.now()}-${i}`, text }));
 
-export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate, token }) {
+export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate }) {
+  const { token } = useAuth();  // ← get token from context instead of prop
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editIngredients, setEditIngredients] = useState([]);
   const [editInstructions, setEditInstructions] = useState([]);
+  const [editImageFile, setEditImageFile] = useState(null);  // ← new
   const [translated, setTranslated] = useState(null);
   const [showingTranslation, setShowingTranslation] = useState(false);
   const [translating, setTranslating] = useState(false);
@@ -26,25 +29,33 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   };
 
   const handleSaveEdits = async () => {
-    try {
-      await updateRecipe(recipe.id, {
-        title: editTitle,
-        ingredients: editIngredients.map((i) => i.text),
-        instructions: editInstructions.map((i) => i.text),
-        notes: recipe.notes || [],
-        language: recipe.language,
-      }, token);
-      onUpdated({
-        ...recipe,
-        title: editTitle,
-        ingredients: editIngredients.map((i) => i.text),
-        instructions: editInstructions.map((i) => i.text),
-      });
-      setEditing(false);
-      setTranslated(null);
-      setShowingTranslation(false);
-    } catch (e) { alert("Update failed"); }
-  };
+  try {
+    let image_url = recipe.image_url;  // default to existing image
+    if (editImageFile) {
+      const result = await uploadRecipeImage_toStorage(editImageFile, token);
+      image_url = result.image_url;
+    }
+    await updateRecipe(recipe.id, {
+      title: editTitle,
+      ingredients: editIngredients.map((i) => i.text),
+      instructions: editInstructions.map((i) => i.text),
+      notes: recipe.notes || [],
+      language: recipe.language,
+      image_url,
+    }, token);
+    onUpdated({
+      ...recipe,
+      title: editTitle,
+      ingredients: editIngredients.map((i) => i.text),
+      instructions: editInstructions.map((i) => i.text),
+      image_url,
+    });
+    setEditing(false);
+    setEditImageFile(null);
+    setTranslated(null);
+    setShowingTranslation(false);
+  } catch (e) { alert("Update failed"); }
+};
 
   const handleDelete = async () => {
     if (!window.confirm("Delete this recipe?")) return;
@@ -99,6 +110,15 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         <>
           <div className="detail-header">
             <h2>{displayed.title}</h2>
+
+            {recipe.image_url && (
+              <img
+                src={recipe.image_url}
+                alt={recipe.title}
+                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px", marginBottom: "16px" }}
+              />
+            )}
+
             <div className="detail-actions">
               {!isKorean && (
                 !showingTranslation ? (
@@ -188,6 +208,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             onSave={handleSaveEdits}
             onCancel={() => setEditing(false)}
             saveLabel={isKorean ? "저장" : "Save changes"}
+            onImageChange={setEditImageFile}
           />
         </>
       )}
