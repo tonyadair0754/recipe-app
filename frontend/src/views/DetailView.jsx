@@ -87,6 +87,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         instructions: translated.instructions,
         notes: [],
         language: "ko",
+        image_url: recipe.image_url || null,
       }, token);
       setTranslationSaved(true);
       onSaved();
