@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
 export default function AuthView() {
-  const { login, signup } = useAuth();
+  const { login, signup, enterGuestMode, migrateGuestRecipes } = useAuth();
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -13,19 +13,16 @@ export default function AuthView() {
   const handleSubmit = async () => {
     setError(null);
     setMessage(null);
-    if (!email || !password) {
-      setError("Please enter your email and password.");
-      return;
-    }
+    if (!email || !password) { setError("Please enter your email and password."); return; }
     setLoading(true);
     try {
       if (mode === "login") {
         await login(email, password);
       } else {
         await signup(email, password);
-        setMessage("Account created! Please check your email to confirm your account, then log in.");
-        setMode("login");
-        setPassword("");
+        // After signup, log users in and migrate any guest recipes
+        const data = await login(email, password);
+        await migrateGuestRecipes(data.access_token);
       }
     } catch (e) {
       setError(e.response?.data?.detail || "Something went wrong.");
@@ -79,24 +76,31 @@ export default function AuthView() {
           onClick={handleSubmit}
           disabled={loading}
         >
-          {loading
-            ? "Please wait…"
-            : mode === "login" ? "Sign in" : "Create account"}
+          {loading ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
         </button>
 
         <p className="auth-switch">
           {mode === "login" ? "Don't have an account? " : "Already have an account? "}
           <button
             className="btn-ghost"
-            onClick={() => {
-              setMode(mode === "login" ? "signup" : "login");
-              setError(null);
-              setMessage(null);
-            }}
+            onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(null); setMessage(null); }}
           >
             {mode === "login" ? "Sign up" : "Sign in"}
           </button>
         </p>
+
+        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+          <button
+            onClick={enterGuestMode}
+            style={{ background: 'none', border: 'none', color: '#2d6a4f', cursor: 'pointer',
+                     textDecoration: 'underline', fontSize: '0.9rem' }}
+          >
+            Continue without an account
+          </button>
+          <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '0.4rem' }}>
+            Your recipes will be saved locally on this device.
+          </p>
+        </div>
       </div>
     </div>
   );

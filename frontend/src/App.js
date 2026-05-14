@@ -8,7 +8,7 @@ import AuthView from "./views/AuthView";
 import "./App.css";
 
 export default function App() {
-  const { user, token, logout, loading: authLoading, wakingUp } = useAuth();
+  const { user, token, logout, isGuest, guestRecipes, loading, wakingUp } = useAuth();
   const [view, setView] = useState("home");
   const [saved, setSaved] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -20,19 +20,27 @@ export default function App() {
     } catch (e) { console.log(e); }
   }, [token]);
 
+  const handleLogout = () => {
+    if (window.confirm("Sign out of RecipeLens?")) logout();
+  };
+
   useEffect(() => {
     if (token) loadRecipes();
   }, [token, loadRecipes]);
 
+  // For guests, the "saved" list is just their localStorage recipes
+  const displayedRecipes = isGuest ? guestRecipes : saved;
+  const collectionCount = displayedRecipes.length;
+
   const goHome = () => setView("home");
   const goCollection = () => { setView("collection"); setSelected(null); };
-  const handleSaved = () => { loadRecipes(); goCollection(); };
+  const handleSaved = () => { if (!isGuest) loadRecipes(); goCollection(); };
   const handleSelect = (r) => { setSelected(r); setView("detail"); };
-  const handleDeleted = () => { loadRecipes(); goCollection(); };
-  const handleUpdated = (r) => { setSelected(r); loadRecipes(); };
+  const handleDeleted = () => { if (!isGuest) loadRecipes(); goCollection(); };
+  const handleUpdated = (r) => { setSelected(r); if (!isGuest) loadRecipes(); };
   const handleNavigate = (r) => { setSelected(r); setView("detail"); };
 
-  if (authLoading) {
+  if (loading) {
     return (
       <div className="app">
         <div className="loading-state" style={{ paddingTop: "80px" }}>
@@ -56,7 +64,7 @@ export default function App() {
     );
   }
 
-  if (!user) return <AuthView />;
+  if (!user && !isGuest) return <AuthView />;
 
   return (
     <div className="app">
@@ -67,29 +75,33 @@ export default function App() {
           RecipeLens
         </div>
         <div className="nav-right">
-          <button
-            className={`nav-link ${view === "home" ? "active" : ""}`}
-            onClick={goHome}
-          >
+          <button className={`nav-link ${view === "home" ? "active" : ""}`} onClick={goHome}>
             Add recipe
           </button>
           <button
             className={`nav-link ${view === "collection" || view === "detail" ? "active" : ""}`}
             onClick={goCollection}
           >
-            My collection ({saved.length})
+            My collection ({collectionCount})
           </button>
-          <button className="nav-link" onClick={logout}>
-            Sign out
-          </button>
+          {isGuest ? (
+            <button className="nav-link" onClick={() => { /* navigate to auth */ window.location.reload(); }}>
+              Sign in
+            </button>
+          ) : (
+            <button className="nav-link" onClick={handleLogout}>
+              Sign out
+            </button>
+          )}
         </div>
       </div>
 
-      {view === "home" && (
-        <HomeView onSaved={handleSaved} token={token} />
-      )}
+      {view === "home" && <HomeView onSaved={handleSaved} />}
       {view === "collection" && (
-        <CollectionView saved={saved} onSelect={handleSelect} />
+        <CollectionView
+          saved={displayedRecipes}
+          onSelect={handleSelect}
+        />
       )}
       {view === "detail" && selected && (
         <DetailView
@@ -97,9 +109,8 @@ export default function App() {
           onBack={goCollection}
           onDeleted={handleDeleted}
           onUpdated={handleUpdated}
-          onSaved={loadRecipes}
+          onSaved={isGuest ? () => {} : loadRecipes}
           onNavigate={handleNavigate}
-          token={token}
         />
       )}
     </div>

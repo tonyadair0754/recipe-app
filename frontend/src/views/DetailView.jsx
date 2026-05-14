@@ -3,6 +3,8 @@ import RecipeEditor from "../components/RecipeEditor";
 import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeImage_toStorage } from "../api";
 import { useAuth } from "../context/AuthContext";
 
+const BASE = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
+
 const toItems = (arr) =>
   (arr || []).map((item, i) => ({
     id: `item-${Date.now()}-${i}`,
@@ -10,13 +12,31 @@ const toItems = (arr) =>
     images: typeof item === "string" ? [] : (item.images || []),
   }));
 
+async function translateTextForGuest(recipe) {
+  // Normalize instructions to plain strings for the API
+  const instructions = (recipe.instructions || []).map((s) =>
+    typeof s === "string" ? s : s.text
+  );
+  const res = await fetch(`${BASE}/translate-text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: recipe.title,
+      ingredients: recipe.ingredients,
+      instructions,
+    }),
+  });
+  if (!res.ok) throw new Error("Translation failed");
+  return res.json();
+}
+
 export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate }) {
-  const { token } = useAuth();  // ← get token from context instead of prop
+  const { token, isGuest, updateGuestRecipe, deleteGuestRecipe, addGuestRecipe } = useAuth();
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editIngredients, setEditIngredients] = useState([]);
   const [editInstructions, setEditInstructions] = useState([]);
-  const [editImageFile, setEditImageFile] = useState(null);  // ← new
+  const [editImageFile, setEditImageFile] = useState(null);
   const [translated, setTranslated] = useState(null);
   const [showingTranslation, setShowingTranslation] = useState(false);
   const [translating, setTranslating] = useState(false);
@@ -34,37 +54,60 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   };
 
   const handleSaveEdits = async () => {
-  try {
-    let image_url = removeExistingImage ? null : recipe.image_url;
-    if (editImageFile) {
-      const result = await uploadRecipeImage_toStorage(editImageFile, token);
-      image_url = result.image_url;
-    }
-    await updateRecipe(recipe.id, {
-      title: editTitle,
-      ingredients: editIngredients.map((i) => i.text),
-      instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
-      notes: recipe.notes || [],
-      language: recipe.language,
-      image_url,
-    }, token);
-    onUpdated({
-      ...recipe,
-      title: editTitle,
-      ingredients: editIngredients.map((i) => i.text),
-      instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
-      image_url,
-    });
-    setEditing(false);
-    setEditImageFile(null);
-    setTranslated(null);
-    setShowingTranslation(false);
-    setRemoveExistingImage(false);
-  } catch (e) { alert("Update failed"); }
-};
+    try {
+      if (isGuest) {
+        // For guests, images stay local as object URLs — no Supabase upload
+        const image_url = editImageFile
+          ? URL.createObjectURL(editImageFile)
+          : removeExistingImage ? null : recipe.image_url;
+        const updated = {
+          title: editTitle,
+          ingredients: editIngredients.map((i) => i.text),
+          instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
+          image_url,
+        };
+        updateGuestRecipe(recipe.id, updated);
+        onUpdated({ ...recipe, ...updated });
+        setEditing(false);
+        setEditImageFile(null);
+        setRemoveExistingImage(false);
+        return;
+      }
+      let image_url = removeExistingImage ? null : recipe.image_url;
+      if (editImageFile) {
+        const result = await uploadRecipeImage_toStorage(editImageFile, token);
+        image_url = result.image_url;
+      }
+      await updateRecipe(recipe.id, {
+        title: editTitle,
+        ingredients: editIngredients.map((i) => i.text),
+        instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
+        notes: recipe.notes || [],
+        language: recipe.language,
+        image_url,
+      }, token);
+      onUpdated({
+        ...recipe,
+        title: editTitle,
+        ingredients: editIngredients.map((i) => i.text),
+        instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
+        image_url,
+      });
+      setEditing(false);
+      setEditImageFile(null);
+      setTranslated(null);
+      setShowingTranslation(false);
+      setRemoveExistingImage(false);
+    } catch (e) { alert("Update failed"); }
+  };
 
   const handleDelete = async () => {
     if (!window.confirm("Delete this recipe?")) return;
+    if (isGuest) {
+      deleteGuestRecipe(recipe.id);
+      onDeleted();
+      return;
+    }
     try {
       await deleteRecipe(recipe.id, token);
       onDeleted();
@@ -75,7 +118,9 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     if (translated) { setShowingTranslation(true); return; }
     setTranslating(true);
     try {
-      const data = await translateRecipe(recipe.id, "Korean", token);
+      const data = isGuest
+        ? await translateTextForGuest(recipe)
+        : await translateRecipe(recipe.id, "Korean", token);
       setTranslated(data);
       setShowingTranslation(true);
     } catch (e) {
@@ -87,6 +132,19 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
   const handleSaveTranslation = async () => {
     try {
+      if (isGuest) {
+        addGuestRecipe({
+          title: translated.title,
+          ingredients: translated.ingredients,
+          instructions: translated.instructions,
+          notes: [],
+          language: "ko",
+          image_url: recipe.image_url || null,
+        });
+        setTranslationSaved(true);
+        onSaved();
+        return;
+      }
       const saved = await saveRecipe({
         title: translated.title,
         ingredients: translated.ingredients,
@@ -99,7 +157,6 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       onSaved();
       onNavigate(saved);
     } catch (e) {
-      console.error("Save error:", e);
       alert("Could not save translation: " + (e.response?.data?.detail || e.message));
     }
   };
@@ -109,9 +166,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
   return (
     <>
-      <button className="detail-back" onClick={onBack}>
-        ← My collection
-      </button>
+      <button className="detail-back" onClick={onBack}>← My collection</button>
 
       {!editing ? (
         <>
@@ -120,47 +175,31 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             <div className="detail-actions">
               {!isKorean && (
                 !showingTranslation ? (
-                  <button
-                    className="btn-translate"
-                    onClick={handleTranslate}
-                    disabled={translating}
-                  >
+                  <button className="btn-translate" onClick={handleTranslate} disabled={translating}>
                     {translating ? "처리중…" : "한국어로 보기"}
                   </button>
                 ) : (
-                  <button
-                    className="btn-translate active"
-                    onClick={() => setShowingTranslation(false)}
-                  >
+                  <button className="btn-translate active" onClick={() => setShowingTranslation(false)}>
                     View in English
                   </button>
                 )
               )}
-              <button className="btn-secondary" onClick={startEditing}>
-                Edit
-              </button>
-              <button className="btn-danger" onClick={handleDelete}>
-                Delete
-              </button>
+              <button className="btn-secondary" onClick={startEditing}>Edit</button>
+              <button className="btn-danger" onClick={handleDelete}>Delete</button>
             </div>
           </div>
 
           {recipe.image_url && !removeExistingImage && (
             <div style={{ marginBottom: "16px", marginTop: "12px" }}>
-              <img
-                src={recipe.image_url}
-                alt={recipe.title}
-                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }}
-              />
+              <img src={recipe.image_url} alt={recipe.title}
+                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }} />
             </div>
           )}
 
           {translating && (
             <div className="loading-state" style={{ padding: "24px 0" }}>
               <div>
-                <span className="loading-dot" />
-                <span className="loading-dot" />
-                <span className="loading-dot" />
+                <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
               </div>
               <p style={{ marginTop: "12px" }}>처리중…</p>
             </div>
@@ -170,74 +209,49 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             <>
               <p className="section-heading">{ingredientsLabel}</p>
               <ul className="detail-list">
-                {displayed.ingredients.map((item, i) => (
-                  <li key={i}>{item}</li>
-                ))}
+                {displayed.ingredients.map((item, i) => <li key={i}>{item}</li>)}
               </ul>
 
               <p className="section-heading">{instructionsLabel}</p>
               <ol className="detail-list" style={{ listStyle: "none" }}>
                 {displayed.instructions.map((step, i) => {
-                const text = typeof step === "string" ? step : step.text;
-                const images = typeof step === "string" ? [] : (step.images || []);
-                return (
-                  <li key={i} style={{ display: "flex", flexDirection: "column", marginBottom: "16px" }}>
-                    <div>
-                      <span className="step-num">{i + 1}</span>
-                      {text}
-                    </div>
-                    {images.length > 0 && (
-                      <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                        {images.map((url, imgIndex) => (
-                          <img
-                            key={imgIndex}
-                            src={url}
-                            alt={`Step ${i + 1}`}
-                            style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
+                  const text = typeof step === "string" ? step : step.text;
+                  const images = typeof step === "string" ? [] : (step.images || []);
+                  return (
+                    <li key={i} style={{ display: "flex", flexDirection: "column", marginBottom: "16px" }}>
+                      <div><span className="step-num">{i + 1}</span>{text}</div>
+                      {images.length > 0 && (
+                        <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                          {images.map((url, imgIndex) => (
+                            <img key={imgIndex} src={url} alt={`Step ${i + 1}`}
+                              style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }} />
+                          ))}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ol>
 
               {showingTranslation && !translationSaved && (
                 <div style={{ marginTop: "24px" }}>
-                  <button className="btn-primary" onClick={handleSaveTranslation}>
-                    한국어 버전 저장
-                  </button>
+                  <button className="btn-primary" onClick={handleSaveTranslation}>한국어 버전 저장</button>
                 </div>
               )}
-
               {showingTranslation && translationSaved && (
-                <p style={{ marginTop: "24px", fontSize: "13px", color: "#2d6a4f" }}>
-                  ✓ 저장되었습니다
-                </p>
+                <p style={{ marginTop: "24px", fontSize: "13px", color: "#2d6a4f" }}>✓ 저장되었습니다</p>
               )}
             </>
           )}
         </>
       ) : (
         <>
-          <input
-            className="title-input"
-            value={editTitle}
-            onChange={(e) => setEditTitle(e.target.value)}
-          />
+          <input className="title-input" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
           {recipe.image_url && !removeExistingImage && (
             <div style={{ marginBottom: "16px", marginTop: "12px" }}>
-              <img
-                src={recipe.image_url}
-                alt={recipe.title}
-                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }}
-              />
-              <button
-                className="btn-add"
-                onClick={() => setRemoveExistingImage(true)}
-                style={{ marginTop: "8px" }}
-              >
+              <img src={recipe.image_url} alt={recipe.title}
+                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }} />
+              <button className="btn-add" onClick={() => setRemoveExistingImage(true)} style={{ marginTop: "8px" }}>
                 Remove photo
               </button>
             </div>

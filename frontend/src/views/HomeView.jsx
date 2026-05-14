@@ -11,7 +11,7 @@ const toItems = (arr) =>
   }));
 
 export default function HomeView({ onSaved }) {
-  const { token } = useAuth();
+  const { token, isGuest, addGuestRecipe } = useAuth();
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -28,7 +28,7 @@ export default function HomeView({ onSaved }) {
   const handleFile = (f) => {
     if (!f) return;
     if (!f.type.startsWith("image/")) {
-      alert("Only image files are supported (JPG, PNG, HEIC, etc). PDFs and other file types can't be scanned.");
+      alert("Only image files are supported (JPG, PNG, HEIC, etc).");
       return;
     }
     setFile(f);
@@ -39,8 +39,8 @@ export default function HomeView({ onSaved }) {
     setLoading(true);
     setRecipe(null);
     try {
+      // /upload endpoint works without auth — token is optional
       const data = await uploadRecipeImage(file, token);
-      console.log("Upload response:", data);
       setRecipe(data);
       setIngredients(toItems(data.ingredients));
       setInstructions(toItems(data.instructions));
@@ -53,6 +53,22 @@ export default function HomeView({ onSaved }) {
 
   const handleSaveUploaded = async () => {
     try {
+      if (isGuest) {
+        // Store image as a local object URL (stays in memory this session)
+        const image_url = imageToSave ? URL.createObjectURL(imageToSave) : null;
+        addGuestRecipe({
+          title: recipe.title,
+          ingredients: ingredients.map((i) => i.text),
+          instructions: instructions.map((i) => i.text),
+          notes: recipe.notes || [],
+          image_url,
+        });
+        setRecipe(null);
+        setFile(null);
+        setImageToSave(null);
+        onSaved();
+        return;
+      }
       let image_url = null;
       if (imageToSave) {
         const result = await uploadRecipeImage_toStorage(imageToSave, token);
@@ -81,6 +97,23 @@ export default function HomeView({ onSaved }) {
 
   const handleSaveManual = async () => {
     try {
+      if (isGuest) {
+        const image_url = manualImageToSave ? URL.createObjectURL(manualImageToSave) : null;
+        addGuestRecipe({
+          title: manualTitle,
+          ingredients: manualIngredients.map((i) => i.text).filter(Boolean),
+          instructions: manualInstructions.map((i) => i.text).filter(Boolean),
+          notes: [],
+          image_url,
+        });
+        setManualTitle("");
+        setManualActive(false);
+        setManualIngredients([]);
+        setManualInstructions([]);
+        setManualImageToSave(null);
+        onSaved();
+        return;
+      }
       let image_url = null;
       if (manualImageToSave) {
         const result = await uploadRecipeImage_toStorage(manualImageToSave, token);

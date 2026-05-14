@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from google import genai
@@ -9,9 +9,11 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
+from typing import Optional
 import io
 import os
 import json
+import re
 
 load_dotenv()
 
@@ -97,13 +99,22 @@ def login(data: dict):
         }
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+async def get_optional_user(authorization: Optional[str] = Header(None)):
+    if not authorization:
+        return None
+    try:
+        token = authorization.replace("Bearer ", "")
+        user = supabase.auth.get_user(token)
+        return user
+    except:
+        return None
 
 # ── Upload ──
 @app.post("/upload")
 async def upload(
     file: UploadFile = File(...),
-    current_user=Depends(get_current_user)
-):
+    current_user=Depends(get_optional_user)):
     try:
         contents = await file.read()
         image_bytes = types.Part.from_bytes(data=contents, mime_type=file.content_type)
@@ -191,6 +202,25 @@ def save_recipe(data: dict, current_user=Depends(get_current_user)):
         }
     finally:
         db.close()
+
+@app.post("/translate-text")
+async def translate_text(body: dict):
+    recipe_text = f"""Title: {body.get('title')}
+Ingredients: {json.dumps(body.get('ingredients', []))}
+Instructions: {json.dumps(body.get('instructions', []))}"""
+
+    prompt = f"""Translate this recipe to Korean. Return only valid JSON with keys: title (string), ingredients (array of strings), instructions (array of strings). No markdown, no explanation.
+
+{recipe_text}"""
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[prompt]
+    )
+    text = response.text.strip()
+    text = re.sub(r"^```json\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    return json.loads(text)
 
 @app.get("/recipes")
 def get_recipes(current_user=Depends(get_current_user)):

@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 
 export default function CollectionView({ saved, onSelect }) {
+  const { isGuest } = useAuth();
   const [search, setSearch] = useState("");
 
   const filtered = saved.filter((r) =>
@@ -9,6 +11,25 @@ export default function CollectionView({ saved, onSelect }) {
 
   return (
     <>
+      {isGuest && (
+        <div style={{
+          background: '#fef08a', padding: '10px 16px', borderRadius: '8px',
+          marginBottom: '16px', display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', gap: '12px'
+        }}>
+          <span style={{ fontSize: '0.875rem' }}>
+            Recipes saved locally — sign up to sync across devices.
+          </span>
+          <button
+            className="btn-primary"
+            style={{ whiteSpace: 'nowrap', padding: '6px 14px', fontSize: '0.85rem' }}
+            onClick={() => window.location.reload()}
+          >
+            Sign up free
+          </button>
+        </div>
+      )}
+
       <div className="collection-header">
         <h2>My collection</h2>
         <input
@@ -21,9 +42,7 @@ export default function CollectionView({ saved, onSelect }) {
       </div>
 
       {saved.length === 0 ? (
-        <div className="empty-state">
-          <p>No recipes saved yet.</p>
-        </div>
+        <div className="empty-state"><p>No recipes saved yet.</p></div>
       ) : filtered.length === 0 ? (
         <p className="no-results">No recipes match "{search}"</p>
       ) : (
@@ -31,11 +50,8 @@ export default function CollectionView({ saved, onSelect }) {
           {filtered.map((r) => (
             <div key={r.id} className="recipe-card" onClick={() => onSelect(r)}>
               {r.image_url && (
-                <img
-                  src={r.image_url}
-                  alt={r.title}
-                  style={{ width: "100%", height: "140px", objectFit: "cover", borderRadius: "6px", marginBottom: "10px" }}
-                />
+                <img src={r.image_url} alt={r.title}
+                  style={{ width: "100%", height: "140px", objectFit: "cover", borderRadius: "6px", marginBottom: "10px" }} />
               )}
               <h3>{r.title}</h3>
               <p className="recipe-card-meta">
