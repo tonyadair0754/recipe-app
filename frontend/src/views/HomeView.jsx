@@ -181,7 +181,7 @@ export default function HomeView({ onSaved }) {
       {recipe && !loading && (
         <div className="recipe-editor">
           <h2>{recipe.title}</h2>
-          { console.log("file at render time:", file) }
+          { console.log("file at render time:", file) } { }
           <RecipeEditor
             ingredients={ingredients}
             setIngredients={setIngredients}
