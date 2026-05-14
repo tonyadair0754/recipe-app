@@ -34,7 +34,10 @@ export default function HomeView({ onSaved }) {
       setIngredients(toItems(data.ingredients));
       setInstructions(toItems(data.instructions));
     } catch (e) {
-      alert(e.response ? JSON.stringify(e.response.data) : "Upload failed");
+      console.log("Upload error:", e);
+      console.log("Upload error response:", e.response?.data);
+      alert("Error: " + (e.response?.data?.detail || e.message || "Unknown error"));
+      //alert(e.response ? JSON.stringify(e.response.data) : "Upload failed");
     } finally {
       setLoading(false);
     }
