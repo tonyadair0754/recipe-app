@@ -19,12 +19,12 @@ export default function HomeView({ onSaved }) {
   const [manualIngredients, setManualIngredients] = useState([]);
   const [manualInstructions, setManualInstructions] = useState([]);
   const [imageToSave, setImageToSave] = useState(null);
+  const [manualImageToSave, setManualImageToSave] = useState(null);
 
   const handleFile = (f) => { if (f) setFile(f); };
 
   const handleUpload = async () => {
     if (!file) return;
-    console.log("Token at upload time:", token);
     setLoading(true);
     setRecipe(null);
     try {
@@ -34,10 +34,7 @@ export default function HomeView({ onSaved }) {
       setIngredients(toItems(data.ingredients));
       setInstructions(toItems(data.instructions));
     } catch (e) {
-      console.log("Upload error:", e);
-      console.log("Upload error response:", e.response?.data);
-      alert("Error: " + (e.response?.data?.detail || e.message || "Unknown error"));
-      //alert(e.response ? JSON.stringify(e.response.data) : "Upload failed");
+      alert(e.response ? JSON.stringify(e.response.data) : "Upload failed");
     } finally {
       setLoading(false);
     }
@@ -73,16 +70,23 @@ export default function HomeView({ onSaved }) {
 
   const handleSaveManual = async () => {
     try {
+      let image_url = null;
+      if (manualImageToSave) {
+        const result = await uploadRecipeImage_toStorage(manualImageToSave, token);
+        image_url = result.image_url;
+      }
       await saveRecipe({
         title: manualTitle,
         ingredients: manualIngredients.map((i) => i.text).filter(Boolean),
         instructions: manualInstructions.map((i) => i.text).filter(Boolean),
         notes: [],
+        image_url,
       }, token);
       setManualTitle("");
       setManualActive(false);
       setManualIngredients([]);
       setManualInstructions([]);
+      setManualImageToSave(null);
       onSaved();
     } catch (e) { alert("Save failed"); }
   };
@@ -104,6 +108,7 @@ export default function HomeView({ onSaved }) {
           onSave={handleSaveManual}
           onCancel={() => { setManualActive(false); setManualTitle(""); }}
           saveLabel="Save to collection"
+          onImageChange={setManualImageToSave}
         />
       </div>
     );
