@@ -11,6 +11,7 @@ export default function RecipeEditor({
   saveLabel,
   imageFile,
   onImageChange,
+  onRemoveExisting,
 }) {
 
   const [preview, setPreview] = useState(null);
@@ -36,6 +37,7 @@ export default function RecipeEditor({
     setPreview(null);
     setSaveImage(false);
     onImageChange?.(null);
+    onRemoveExisting?.();
   };
 
   const handleSaveImageToggle = (e) => {

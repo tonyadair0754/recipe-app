@@ -21,7 +21,14 @@ export default function HomeView({ onSaved }) {
   const [imageToSave, setImageToSave] = useState(null);
   const [manualImageToSave, setManualImageToSave] = useState(null);
 
-  const handleFile = (f) => { if (f) setFile(f); };
+  const handleFile = (f) => {
+    if (!f) return;
+    if (!f.type.startsWith("image/")) {
+      alert("Only image files are supported (JPG, PNG, HEIC, etc). PDFs and other file types can't be scanned.");
+      return;
+    }
+    setFile(f);
+  };
 
   const handleUpload = async () => {
     if (!file) return;

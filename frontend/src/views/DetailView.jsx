@@ -17,6 +17,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const [showingTranslation, setShowingTranslation] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [translationSaved, setTranslationSaved] = useState(false);
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
 
   const isKorean = recipe.language === "ko";
   const displayed = showingTranslation && translated ? translated : recipe;
@@ -30,7 +31,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
   const handleSaveEdits = async () => {
   try {
-    let image_url = recipe.image_url;  // default to existing image
+    let image_url = removeExistingImage ? null : recipe.image_url;
     if (editImageFile) {
       const result = await uploadRecipeImage_toStorage(editImageFile, token);
       image_url = result.image_url;
@@ -54,6 +55,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     setEditImageFile(null);
     setTranslated(null);
     setShowingTranslation(false);
+    setRemoveExistingImage(false);
   } catch (e) { alert("Update failed"); }
 };
 
@@ -107,18 +109,29 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         ← My collection
       </button>
 
+      {recipe.image_url && !removeExistingImage && (
+        <div style={{ marginBottom: "16px" }}>
+          <img
+            src={recipe.image_url}
+            alt={recipe.title}
+            style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }}
+          />
+          {editing && (
+            <button
+              className="btn-add"
+              onClick={() => setRemoveExistingImage(true)}
+              style={{ marginTop: "8px" }}
+            >
+              Remove photo
+            </button>
+          )}
+        </div>
+      )}
+
       {!editing ? (
         <>
           <div className="detail-header">
             <h2>{displayed.title}</h2>
-
-            {recipe.image_url && (
-              <img
-                src={recipe.image_url}
-                alt={recipe.title}
-                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px", marginBottom: "16px" }}
-              />
-            )}
 
             <div className="detail-actions">
               {!isKorean && (
@@ -207,9 +220,10 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             instructions={editInstructions}
             setInstructions={setEditInstructions}
             onSave={handleSaveEdits}
-            onCancel={() => setEditing(false)}
+            onCancel={() => { setEditing(false); setEditImageFile(null); setRemoveExistingImage(false); }}
             saveLabel={isKorean ? "저장" : "Save changes"}
             onImageChange={setEditImageFile}
+            onRemoveExisting={() => setRemoveExistingImage(true)}
           />
         </>
       )}
