@@ -4,7 +4,11 @@ import { uploadRecipeImage, saveRecipe, uploadRecipeImage_toStorage } from "../a
 import { useAuth } from "../context/AuthContext";
 
 const toItems = (arr) =>
-  (arr || []).map((text, i) => ({ id: `item-${Date.now()}-${i}`, text }));
+  (arr || []).map((item, i) => ({
+    id: `item-${Date.now()}-${i}`,
+    text: typeof item === "string" ? item : item.text,
+    images: typeof item === "string" ? [] : (item.images || []),
+  }));
 
 export default function HomeView({ onSaved }) {
   const { token } = useAuth();

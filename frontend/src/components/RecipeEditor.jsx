@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import EditableList from "./EditableList";
+import { uploadRecipeImage_toStorage } from "../api";
+import { useAuth } from "../context/AuthContext";
 
 export default function RecipeEditor({
   ingredients,
@@ -10,10 +12,11 @@ export default function RecipeEditor({
   onCancel,
   saveLabel,
   imageFile,
+  hasExistingImage,
   onImageChange,
   onRemoveExisting,
 }) {
-
+  const { token } = useAuth();
   const [preview, setPreview] = useState(null);
   const [saveImage, setSaveImage] = useState(false);
 
@@ -46,10 +49,62 @@ export default function RecipeEditor({
     onImageChange?.(e.target.checked ? imageFile : null);
   };
 
+  // Upload a step image immediately and add its URL to that instruction's images array
+  const handleStepImagePick = async (e, index) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      const result = await uploadRecipeImage_toStorage(f, token);
+      const updated = [...instructions];
+      const currentImages = updated[index].images || [];
+      updated[index] = { ...updated[index], images: [...currentImages, result.image_url] };
+      setInstructions(updated);
+    } catch (err) {
+      alert("Image upload failed");
+    }
+  };
+
+  const handleRemoveStepImage = (stepIndex, imageIndex) => {
+    const updated = [...instructions];
+    const currentImages = [...(updated[stepIndex].images || [])];
+    currentImages.splice(imageIndex, 1);
+    updated[stepIndex] = { ...updated[stepIndex], images: currentImages };
+    setInstructions(updated);
+  };
+
+  // This is the renderExtra function passed to EditableList for instructions
+  const renderStepImages = (item, i) => (
+    <div style={{ marginTop: "8px", paddingLeft: "28px" }}>
+      {(item.images || []).map((url, imgIndex) => (
+        <div key={imgIndex} style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginRight: "8px", marginBottom: "8px" }}>
+          <img
+            src={url}
+            alt={`Step ${i + 1}`}
+            style={{ height: "80px", width: "80px", objectFit: "cover", borderRadius: "6px" }}
+          />
+          <button
+            className="btn-remove"
+            onClick={() => handleRemoveStepImage(i, imgIndex)}
+            title="Remove image"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <label className="btn-add" style={{ cursor: "pointer", fontSize: "12px" }}>
+        + Add image
+        <input
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => handleStepImagePick(e, i)}
+        />
+      </label>
+    </div>
+  );
+
   return (
     <div className="recipe-editor">
-
-      {/* Image section */}
       <p className="section-heading">Photo</p>
       {preview ? (
         <div style={{ marginBottom: "12px" }}>
@@ -59,7 +114,6 @@ export default function RecipeEditor({
             style={{ width: "100%", maxHeight: "240px", objectFit: "cover", borderRadius: "8px" }}
           />
           {imageFile && (
-            // Show confirm checkbox only for scanned images passed in as prop
             <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px", fontSize: "14px" }}>
               <input
                 type="checkbox"
@@ -74,28 +128,41 @@ export default function RecipeEditor({
           </button>
         </div>
       ) : (
-        <div style={{ marginBottom: "12px" }}>
-          <label className="btn-add" style={{ cursor: "pointer" }}>
-            + Add photo
-            <input
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={handleImagePick}
-            />
-          </label>
-        </div>
+        !hasExistingImage && (
+          <div style={{ marginBottom: "12px" }}>
+            <label className="btn-add" style={{ cursor: "pointer" }}>
+              + Add photo
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={handleImagePick}
+              />
+            </label>
+          </div>
+        )
       )}
 
       <p className="section-heading">Ingredients</p>
-      <EditableList items={ingredients} setItems={setIngredients} ordered={false} idPrefix="ing" />
+      <EditableList
+        items={ingredients}
+        setItems={setIngredients}
+        ordered={false}
+        idPrefix="ing"
+      />
       <button className="btn-add" onClick={() => setIngredients([...ingredients, { id: `ing-${Date.now()}`, text: "" }])}>
         + Add ingredient
       </button>
 
       <p className="section-heading">Instructions</p>
-      <EditableList items={instructions} setItems={setInstructions} ordered={true} idPrefix="ins" />
-      <button className="btn-add" onClick={() => setInstructions([...instructions, { id: `ins-${Date.now()}`, text: "" }])}>
+      <EditableList
+        items={instructions}
+        setItems={setInstructions}
+        ordered={true}
+        idPrefix="ins"
+        renderExtra={renderStepImages}  /* ← only instructions get this */
+      />
+      <button className="btn-add" onClick={() => setInstructions([...instructions, { id: `ins-${Date.now()}`, text: "", images: [] }])}>
         + Add step
       </button>
 

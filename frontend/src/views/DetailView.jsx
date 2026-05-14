@@ -4,7 +4,11 @@ import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeIm
 import { useAuth } from "../context/AuthContext";
 
 const toItems = (arr) =>
-  (arr || []).map((text, i) => ({ id: `item-${Date.now()}-${i}`, text }));
+  (arr || []).map((item, i) => ({
+    id: `item-${Date.now()}-${i}`,
+    text: typeof item === "string" ? item : item.text,
+    images: typeof item === "string" ? [] : (item.images || []),
+  }));
 
 export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate }) {
   const { token } = useAuth();  // ← get token from context instead of prop
@@ -39,7 +43,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     await updateRecipe(recipe.id, {
       title: editTitle,
       ingredients: editIngredients.map((i) => i.text),
-      instructions: editInstructions.map((i) => i.text),
+      instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
       notes: recipe.notes || [],
       language: recipe.language,
       image_url,
@@ -48,7 +52,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       ...recipe,
       title: editTitle,
       ingredients: editIngredients.map((i) => i.text),
-      instructions: editInstructions.map((i) => i.text),
+      instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
       image_url,
     });
     setEditing(false);
@@ -109,30 +113,10 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         ← My collection
       </button>
 
-      {recipe.image_url && !removeExistingImage && (
-        <div style={{ marginBottom: "16px" }}>
-          <img
-            src={recipe.image_url}
-            alt={recipe.title}
-            style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }}
-          />
-          {editing && (
-            <button
-              className="btn-add"
-              onClick={() => setRemoveExistingImage(true)}
-              style={{ marginTop: "8px" }}
-            >
-              Remove photo
-            </button>
-          )}
-        </div>
-      )}
-
       {!editing ? (
         <>
           <div className="detail-header">
             <h2>{displayed.title}</h2>
-
             <div className="detail-actions">
               {!isKorean && (
                 !showingTranslation ? (
@@ -161,6 +145,16 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             </div>
           </div>
 
+          {recipe.image_url && !removeExistingImage && (
+            <div style={{ marginBottom: "16px", marginTop: "12px" }}>
+              <img
+                src={recipe.image_url}
+                alt={recipe.title}
+                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }}
+              />
+            </div>
+          )}
+
           {translating && (
             <div className="loading-state" style={{ padding: "24px 0" }}>
               <div>
@@ -183,12 +177,30 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
               <p className="section-heading">{instructionsLabel}</p>
               <ol className="detail-list" style={{ listStyle: "none" }}>
-                {displayed.instructions.map((step, i) => (
-                  <li key={i}>
-                    <span className="step-num">{i + 1}</span>
-                    {step}
+                {displayed.instructions.map((step, i) => {
+                const text = typeof step === "string" ? step : step.text;
+                const images = typeof step === "string" ? [] : (step.images || []);
+                return (
+                  <li key={i} style={{ display: "flex", flexDirection: "column", marginBottom: "16px" }}>
+                    <div>
+                      <span className="step-num">{i + 1}</span>
+                      {text}
+                    </div>
+                    {images.length > 0 && (
+                      <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {images.map((url, imgIndex) => (
+                          <img
+                            key={imgIndex}
+                            src={url}
+                            alt={`Step ${i + 1}`}
+                            style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </li>
-                ))}
+                );
+              })}
               </ol>
 
               {showingTranslation && !translationSaved && (
@@ -214,6 +226,22 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             value={editTitle}
             onChange={(e) => setEditTitle(e.target.value)}
           />
+          {recipe.image_url && !removeExistingImage && (
+            <div style={{ marginBottom: "16px", marginTop: "12px" }}>
+              <img
+                src={recipe.image_url}
+                alt={recipe.title}
+                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }}
+              />
+              <button
+                className="btn-add"
+                onClick={() => setRemoveExistingImage(true)}
+                style={{ marginTop: "8px" }}
+              >
+                Remove photo
+              </button>
+            </div>
+          )}
           <RecipeEditor
             ingredients={editIngredients}
             setIngredients={setEditIngredients}
@@ -222,6 +250,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             onSave={handleSaveEdits}
             onCancel={() => { setEditing(false); setEditImageFile(null); setRemoveExistingImage(false); }}
             saveLabel={isKorean ? "저장" : "Save changes"}
+            hasExistingImage={!!recipe.image_url && !removeExistingImage}
             onImageChange={setEditImageFile}
             onRemoveExisting={() => setRemoveExistingImage(true)}
           />

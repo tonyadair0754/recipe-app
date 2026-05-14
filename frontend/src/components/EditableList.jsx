@@ -8,7 +8,7 @@ const onDragEnd = (list, setList) => (result) => {
   setList(updated);
 };
 
-export default function EditableList({ items, setItems, ordered, idPrefix }) {
+export default function EditableList({ items, setItems, ordered, idPrefix, renderExtra }) {
   const Tag = ordered ? "ol" : "ul";
   return (
     <DragDropContext onDragEnd={onDragEnd(items, setItems)}>
@@ -44,6 +44,8 @@ export default function EditableList({ items, setItems, ordered, idPrefix }) {
                     >
                       ×
                     </button>
+                    {/* Render any extra UI the parent wants below this item */}
+                    {renderExtra && renderExtra(item, i)}
                   </li>
                 )}
               </Draggable>
