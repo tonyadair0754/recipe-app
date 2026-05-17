@@ -2,6 +2,7 @@ import { useState } from "react";
 import RecipeEditor from "../components/RecipeEditor";
 import { uploadRecipeImage, saveRecipe, uploadRecipeImage_toStorage } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { imageToBase64 } from "../utils/imageUtils";
 
 const toItems = (arr) =>
   (arr || []).map((item, i) => ({
@@ -55,11 +56,11 @@ export default function HomeView({ onSaved }) {
     try {
       if (isGuest) {
         // Store image as a local object URL (stays in memory this session)
-        const image_url = imageToSave ? URL.createObjectURL(imageToSave) : null;
+        const image_url = imageToSave || null;
         addGuestRecipe({
           title: recipe.title,
           ingredients: ingredients.map((i) => i.text),
-          instructions: instructions.map((i) => i.text),
+          instructions: instructions.map((i) => ({ text: i.text, images: i.images || [] })),
           notes: recipe.notes || [],
           image_url,
         });
@@ -85,7 +86,10 @@ export default function HomeView({ onSaved }) {
       setFile(null);
       setImageToSave(null);
       onSaved();
-    } catch (e) { alert("Save failed"); }
+    } catch (e) { 
+      console.error("Save failed:", e);
+      alert("Save failed: " + e.message);
+    }
   };
 
   const startManual = () => {
@@ -98,11 +102,11 @@ export default function HomeView({ onSaved }) {
   const handleSaveManual = async () => {
     try {
       if (isGuest) {
-        const image_url = manualImageToSave ? URL.createObjectURL(manualImageToSave) : null;
+        const image_url = manualImageToSave || null;
         addGuestRecipe({
           title: manualTitle,
           ingredients: manualIngredients.map((i) => i.text).filter(Boolean),
-          instructions: manualInstructions.map((i) => i.text).filter(Boolean),
+          instructions: manualInstructions.map((i) => ({ text: i.text, images: i.images || [] })).filter((i) => i.text),
           notes: [],
           image_url,
         });

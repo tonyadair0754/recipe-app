@@ -56,9 +56,9 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const handleSaveEdits = async () => {
     try {
       if (isGuest) {
-        // For guests, images stay local as object URLs — no Supabase upload
+        // editImageFile is already a base64 string for guests (converted inside RecipeEditor)
         const image_url = editImageFile
-          ? URL.createObjectURL(editImageFile)
+          ? editImageFile
           : removeExistingImage ? null : recipe.image_url;
         const updated = {
           title: editTitle,
@@ -132,11 +132,22 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
   const handleSaveTranslation = async () => {
     try {
+      // Carry step images from the original recipe if the step count matches.
+      // Gemini returns plain strings, so we convert them to objects and attach
+      // the original images where possible.
+      const translatedInstructions = translated.instructions.map((step, i) => {
+        const originalStep = recipe.instructions[i];
+        const originalImages = originalStep
+          ? (typeof originalStep === "string" ? [] : (originalStep.images || []))
+          : [];
+        return { text: step, images: originalImages };
+      });
+
       if (isGuest) {
         addGuestRecipe({
           title: translated.title,
           ingredients: translated.ingredients,
-          instructions: translated.instructions,
+          instructions: translatedInstructions,
           notes: [],
           language: "ko",
           image_url: recipe.image_url || null,
@@ -148,7 +159,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       const saved = await saveRecipe({
         title: translated.title,
         ingredients: translated.ingredients,
-        instructions: translated.instructions,
+        instructions: translatedInstructions,
         notes: [],
         language: "ko",
         image_url: recipe.image_url || null,
@@ -157,6 +168,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       onSaved();
       onNavigate(saved);
     } catch (e) {
+      console.error("Translation save failed:", e);
       alert("Could not save translation: " + (e.response?.data?.detail || e.message));
     }
   };

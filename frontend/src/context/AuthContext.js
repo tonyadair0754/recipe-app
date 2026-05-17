@@ -100,7 +100,7 @@ export function AuthProvider({ children }) {
           ingredients: r.ingredients,
           instructions: r.instructions,
           notes: r.notes || [],
-          image_url: null, // base64 local images can't migrate to Supabase Storage
+          image_url: r.image_url || null,
         }, newToken)
       ));
     }

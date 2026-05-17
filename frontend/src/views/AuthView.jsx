@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
 export default function AuthView() {
-  const { login, signup, enterGuestMode, migrateGuestRecipes } = useAuth();
+  const { login, signup, enterGuestMode, migrateGuestRecipes, guestRecipes } = useAuth();
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,10 +17,14 @@ export default function AuthView() {
     setLoading(true);
     try {
       if (mode === "login") {
-        await login(email, password);
+        const data = await login(email, password);
+        // If the user had guest recipes, migrate them into their account on login too
+        if (guestRecipes.length > 0) {
+          await migrateGuestRecipes(data.access_token);
+        }
       } else {
         await signup(email, password);
-        // After signup, log users in and migrate any guest recipes
+        // After signup, log them in and migrate any guest recipes
         const data = await login(email, password);
         await migrateGuestRecipes(data.access_token);
       }
@@ -47,6 +51,13 @@ export default function AuthView() {
             ? "Sign in to access your recipe collection."
             : "Save and organize your recipes in one place."}
         </p>
+
+        {/* Show a note if the user has guest recipes waiting to be migrated */}
+        {guestRecipes.length > 0 && (
+          <p style={{ fontSize: "0.85rem", color: "#2d6a4f", marginBottom: "12px", textAlign: "center" }}>
+            {guestRecipes.length} local recipe{guestRecipes.length > 1 ? "s" : ""} will be saved to your account.
+          </p>
+        )}
 
         {message && <p className="auth-message">{message}</p>}
         {error && <p className="auth-error">{error}</p>}
@@ -89,15 +100,15 @@ export default function AuthView() {
           </button>
         </p>
 
-        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+        <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
           <button
             onClick={enterGuestMode}
-            style={{ background: 'none', border: 'none', color: '#2d6a4f', cursor: 'pointer',
-                     textDecoration: 'underline', fontSize: '0.9rem' }}
+            style={{ background: "none", border: "none", color: "#2d6a4f", cursor: "pointer",
+                     textDecoration: "underline", fontSize: "0.9rem" }}
           >
             Continue without an account
           </button>
-          <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '0.4rem' }}>
+          <p style={{ fontSize: "0.8rem", color: "#888", marginTop: "0.4rem" }}>
             Your recipes will be saved locally on this device.
           </p>
         </div>

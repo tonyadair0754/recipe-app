@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import EditableList from "./EditableList";
 import { uploadRecipeImage_toStorage } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { imageToBase64 } from "../utils/imageUtils";
 
 export default function RecipeEditor({
   ingredients,
@@ -16,28 +17,54 @@ export default function RecipeEditor({
   onImageChange,
   onRemoveExisting,
 }) {
-  const { token } = useAuth();
+  const { token, isGuest } = useAuth();
   const [preview, setPreview] = useState(null);
   const [saveImage, setSaveImage] = useState(false);
+  // For guests, hold the base64 string so we can restore it if the user
+  // unchecks then rechecks "save this image"
+  const [base64Cache, setBase64Cache] = useState(null);
 
   // When a scanned image is passed in, show it as the preview automatically
   useEffect(() => {
-    if (imageFile) {
+    if (!imageFile) return;
+    if (isGuest) {
+      imageToBase64(imageFile).then((b64) => {
+        setPreview(b64);
+        setBase64Cache(b64);
+        setSaveImage(false); // unchecked by default — user must confirm
+      }).catch((e) => console.error("Preview generation failed:", e));
+    } else {
       setPreview(URL.createObjectURL(imageFile));
       setSaveImage(false); // unchecked by default — user must confirm
     }
-  }, [imageFile]);
+  }, [imageFile, isGuest]);
 
-  const handleImagePick = (e) => {
+  const handleImagePick = async (e) => {
     const f = e.target.files[0];
     if (!f) return;
-    setPreview(URL.createObjectURL(f));
-    setSaveImage(true); // user actively chose this image, so default to checked
-    onImageChange?.(f);
+    try {
+      if (isGuest) {
+        // Guests: convert to base64 so it survives localStorage and page refresh
+        const b64 = await imageToBase64(f);
+        setPreview(b64);
+        setBase64Cache(b64);
+        setSaveImage(true); // user actively chose this image, so default to checked
+        onImageChange?.(b64); // pass base64 string up, not the File
+      } else {
+        // Auth users: pass the raw File up so the parent can upload to Supabase Storage
+        setPreview(URL.createObjectURL(f));
+        setSaveImage(true); // user actively chose this image, so default to checked
+        onImageChange?.(f);
+      }
+    } catch (e) {
+      console.error("Image pick failed:", e);
+      alert("Could not load image. Please try another file.");
+    }
   };
 
   const handleRemoveImage = () => {
     setPreview(null);
+    setBase64Cache(null);
     setSaveImage(false);
     onImageChange?.(null);
     onRemoveExisting?.();
@@ -45,8 +72,13 @@ export default function RecipeEditor({
 
   const handleSaveImageToggle = (e) => {
     setSaveImage(e.target.checked);
-    // If unchecked, tell parent no image should be saved
-    onImageChange?.(e.target.checked ? imageFile : null);
+    if (isGuest) {
+      // Restore from cache for guests (base64 string), not the imageFile prop
+      onImageChange?.(e.target.checked ? base64Cache : null);
+    } else {
+      // Auth users restore the original File object for Supabase upload
+      onImageChange?.(e.target.checked ? imageFile : null);
+    }
   };
 
   // Upload a step image immediately and add its URL to that instruction's images array
@@ -54,12 +86,21 @@ export default function RecipeEditor({
     const f = e.target.files[0];
     if (!f) return;
     try {
-      const result = await uploadRecipeImage_toStorage(f, token);
+      let imageUrl;
+      if (isGuest) {
+        // Guests: convert to base64 — no Supabase Storage access without auth
+        imageUrl = await imageToBase64(f);
+      } else {
+        // Auth users: upload to Supabase Storage and get back a public URL
+        const result = await uploadRecipeImage_toStorage(f, token);
+        imageUrl = result.image_url;
+      }
       const updated = [...instructions];
       const currentImages = updated[index].images || [];
-      updated[index] = { ...updated[index], images: [...currentImages, result.image_url] };
+      updated[index] = { ...updated[index], images: [...currentImages, imageUrl] };
       setInstructions(updated);
     } catch (err) {
+      console.error("Step image upload failed:", err);
       alert("Image upload failed");
     }
   };
@@ -160,20 +201,16 @@ export default function RecipeEditor({
         setItems={setInstructions}
         ordered={true}
         idPrefix="ins"
-        renderExtra={renderStepImages}  /* ← only instructions get this */
+        renderExtra={renderStepImages} /* ← only instructions get this */
       />
       <button className="btn-add" onClick={() => setInstructions([...instructions, { id: `ins-${Date.now()}`, text: "", images: [] }])}>
         + Add step
       </button>
 
       <div className="editor-actions">
-        <button className="btn-primary" onClick={onSave}>
-          {saveLabel || "Save"}
-        </button>
+        <button className="btn-primary" onClick={onSave}>{saveLabel || "Save"}</button>
         {onCancel && (
-          <button className="btn-secondary" onClick={onCancel}>
-            Cancel
-          </button>
+          <button className="btn-secondary" onClick={onCancel}>Cancel</button>
         )}
       </div>
     </div>
