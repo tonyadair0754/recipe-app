@@ -2,7 +2,6 @@ import { useState } from "react";
 import RecipeEditor from "../components/RecipeEditor";
 import { uploadRecipeImage, saveRecipe, uploadRecipeImage_toStorage } from "../api";
 import { useAuth } from "../context/AuthContext";
-import { imageToBase64 } from "../utils/imageUtils";
 
 const toItems = (arr) =>
   (arr || []).map((item, i) => ({
