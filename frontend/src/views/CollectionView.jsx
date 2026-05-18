@@ -5,9 +5,24 @@ export default function CollectionView({ saved, onSelect }) {
   const { isGuest } = useAuth();
   const [search, setSearch] = useState("");
 
-  const filtered = saved.filter((r) =>
-    r.title.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = saved.filter((r) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+
+    // Check title
+    if (r.title.toLowerCase().includes(q)) return true;
+
+    // Check ingredients (array of strings)
+    if (r.ingredients.some((ing) => ing.toLowerCase().includes(q))) return true;
+
+    // Check instructions (may be strings or {text, images} objects)
+    if (r.instructions.some((step) => {
+      const text = typeof step === "string" ? step : step.text;
+      return text.toLowerCase().includes(q);
+    })) return true;
+
+    return false;
+  });
 
   return (
     <>

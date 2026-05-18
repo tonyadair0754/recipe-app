@@ -18,6 +18,7 @@ export default function HomeView({ onSaved }) {
   const [recipe, setRecipe] = useState(null);
   const [ingredients, setIngredients] = useState([]);
   const [instructions, setInstructions] = useState([]);
+  const [editedTitle, setEditedTitle] = useState("");
   const [manualTitle, setManualTitle] = useState("");
   const [manualActive, setManualActive] = useState(false);
   const [manualIngredients, setManualIngredients] = useState([]);
@@ -39,9 +40,10 @@ export default function HomeView({ onSaved }) {
     setLoading(true);
     setRecipe(null);
     try {
-      // /upload endpoint works without auth — token is optional
+      //upload endpoint works without auth — token is optional
       const data = await uploadRecipeImage(file, token);
       setRecipe(data);
+      setEditedTitle(data.title);
       setIngredients(toItems(data.ingredients));
       setInstructions(toItems(data.instructions));
     } catch (e) {
@@ -57,7 +59,7 @@ export default function HomeView({ onSaved }) {
         // Store image as a local object URL (stays in memory this session)
         const image_url = imageToSave || null;
         addGuestRecipe({
-          title: recipe.title,
+          title: editedTitle,
           ingredients: ingredients.map((i) => i.text),
           instructions: instructions.map((i) => ({ text: i.text, images: i.images || [] })),
           notes: recipe.notes || [],
@@ -75,7 +77,7 @@ export default function HomeView({ onSaved }) {
         image_url = result.image_url;
       }
       await saveRecipe({
-        title: recipe.title,
+        title: editedTitle,
         ingredients: ingredients.map((i) => i.text),
         instructions: instructions.map((i) => i.text),
         notes: recipe.notes || [],
@@ -236,14 +238,19 @@ export default function HomeView({ onSaved }) {
 
       {recipe && !loading && (
         <div className="recipe-editor">
-          <h2>{recipe.title}</h2>
+          <input
+            className="title-input"
+            value={editedTitle}
+            onChange={(e) => setEditedTitle(e.target.value)}
+            placeholder="Recipe name..."
+          />
           <RecipeEditor
             ingredients={ingredients}
             setIngredients={setIngredients}
             instructions={instructions}
             setInstructions={setInstructions}
             onSave={handleSaveUploaded}
-            onCancel={() => { setRecipe(null); setFile(null); }}
+            onCancel={() => { setRecipe(null); setFile(null); setEditedTitle(""); }}
             saveLabel="Save to collection"
             imageFile={file}
             onImageChange={setImageToSave}
