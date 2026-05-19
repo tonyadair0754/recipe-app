@@ -1,6 +1,6 @@
 import { useState } from "react";
 import RecipeEditor from "../components/RecipeEditor";
-import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeImage_toStorage } from "../api";
+import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeImage_toStorage, scaleRecipe } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 const BASE = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
@@ -37,11 +37,18 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const [editIngredients, setEditIngredients] = useState([]);
   const [editInstructions, setEditInstructions] = useState([]);
   const [editImageFile, setEditImageFile] = useState(null);
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
+
   const [translated, setTranslated] = useState(null);
   const [showingTranslation, setShowingTranslation] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [translationSaved, setTranslationSaved] = useState(false);
-  const [removeExistingImage, setRemoveExistingImage] = useState(false);
+
+  const [originalServings, setOriginalServings] = useState(4);
+  const [targetServings, setTargetServings] = useState(4);
+  const [scaledIngredients, setScaledIngredients] = useState(null);
+  const [scaling, setScaling] = useState(false);
+
 
   const isKorean = recipe.language === "ko";
   const displayed = showingTranslation && translated ? translated : recipe;
@@ -50,6 +57,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     setEditTitle(recipe.title);
     setEditIngredients(toItems(recipe.ingredients));
     setEditInstructions(toItems(recipe.instructions));
+    setScaledIngredients(null);
     setEditing(true);
   };
 
@@ -127,6 +135,19 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       alert("Translation failed");
     } finally {
       setTranslating(false);
+    }
+  };
+
+  const handleScale = async () => {
+    setScaling(true);
+    try {
+      // Pass both serving counts so the backend can tell Gemini the ratio
+      const data = await scaleRecipe(recipe.id, targetServings, originalServings, token);
+      setScaledIngredients(data.ingredients);
+    } catch (e) {
+      alert("Scaling failed");
+    } finally {
+      setScaling(false);
     }
   };
 
@@ -219,9 +240,77 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
           {!translating && (
             <>
+              {/* Servings scaler — only shown for authenticated users on non-Korean recipes in view mode */}
+              {!isKorean && !isGuest && (
+                <div className="scaler-bar">
+                  <span className="scaler-label">Scale recipe:</span>
+
+                  {/* Original servings — what the recipe currently makes */}
+                  <label className="scaler-field">
+                    From
+                    <input
+                      type="number"
+                      min="1"
+                      value={originalServings}
+                      onChange={(e) => {
+                        setOriginalServings(Number(e.target.value));
+                        // Clear any existing scaled result when the inputs change,
+                        // so the displayed ingredients always match the current inputs
+                        setScaledIngredients(null);
+                      }}
+                      className="scaler-input"
+                    />
+                    servings
+                  </label>
+
+                  <span className="scaler-arrow">→</span>
+
+                  {/* Target servings — what the user wants */}
+                  <label className="scaler-field">
+                    To
+                    <input
+                      type="number"
+                      min="1"
+                      value={targetServings}
+                      onChange={(e) => {
+                        setTargetServings(Number(e.target.value));
+                        setScaledIngredients(null);
+                      }}
+                      className="scaler-input"
+                    />
+                    servings
+                  </label>
+
+                  <button
+                    className="btn-secondary"
+                    onClick={handleScale}
+                    disabled={scaling || originalServings < 1 || targetServings < 1}
+                  >
+                    {scaling ? "Scaling…" : "Scale"}
+                  </button>
+
+                  {/* Reset button only appears once we have a scaled result */}
+                  {scaledIngredients && (
+                    <button
+                      className="btn-add"
+                      onClick={() => setScaledIngredients(null)}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              )}
               <p className="section-heading">{ingredientsLabel}</p>
               <ul className="detail-list">
-                {displayed.ingredients.map((item, i) => <li key={i}>{item}</li>)}
+                {(scaledIngredients || displayed.ingredients).map((item, i) => (
+                  <li key={i}>
+                    {item}
+                    {/* Show a subtle tag on scaled ingredients so the user knows they're looking at scaled amounts */}
+                    {scaledIngredients && i === 0 && (
+                      <span className="scaler-badge">{targetServings} servings</span>
+                    )}
+                  </li>
+                ))}
               </ul>
 
               <p className="section-heading">{instructionsLabel}</p>

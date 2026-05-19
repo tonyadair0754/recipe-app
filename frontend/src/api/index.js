@@ -73,3 +73,11 @@ export const translateRecipe = async (id, language = "Korean", token) => {
   );
   return res.data;
 };
+
+// Asks the backend to scale the ingredient quantities for a different serving count
+export const scaleRecipe = (recipeId, servings, originalServings, token) =>
+  api.post(
+    `/recipes/${recipeId}/scale`,
+    { servings, original_servings: originalServings },
+    { headers: { Authorization: `Bearer ${token}` } }
+  ).then((res) => res.data);
