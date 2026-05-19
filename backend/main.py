@@ -222,6 +222,38 @@ Instructions: {json.dumps(body.get('instructions', []))}"""
     text = re.sub(r"\s*```$", "", text)
     return json.loads(text)
 
+@app.post("/scale-text")
+async def scale_text(body: dict):
+    # Accept raw ingredients + serving counts directly, no DB lookup needed.
+    # This lets guests and any caller scale without needing a saved recipe ID.
+    ingredients = body.get("ingredients", [])
+    original_servings = body.get("original_servings")
+    target_servings = body.get("target_servings")
+
+    prompt = f"""You are a recipe scaling assistant.
+    Rewrite the following ingredient list for {target_servings} servings instead of {original_servings} servings.
+    Scale all quantities proportionally. Keep the ingredient names and units the same — only change the amounts.
+    Return only a valid JSON array of strings, one string per ingredient.
+    No markdown, no explanation, no wrapper object — just the array.
+
+    Ingredients:
+    {json.dumps(ingredients)}
+    """
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[prompt]
+    )
+
+    text = response.text.strip()
+    # Strip markdown code fences if Gemini adds them, same pattern used elsewhere
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1]
+        text = text.rsplit("```", 1)[0]
+
+    scaled = json.loads(text)
+    return {"ingredients": scaled}
+
 @app.get("/recipes")
 def get_recipes(current_user=Depends(get_current_user)):
     db = SessionLocal()
@@ -326,56 +358,6 @@ def translate_recipe(recipe_id: int, data: dict, current_user=Depends(get_curren
 
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Could not parse translation")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
-
-@app.post("/recipes/{recipe_id}/scale")
-def scale_recipe(recipe_id: int, data: dict, current_user=Depends(get_current_user)):
-    db = SessionLocal()
-    try:
-        # Make sure the recipe exists and belongs to this user
-        recipe = db.query(Recipe).filter(
-            Recipe.id == recipe_id,
-            Recipe.user_id == current_user.id
-        ).first()
-        if not recipe:
-            raise HTTPException(status_code=404, detail="Recipe not found")
-
-        target_servings = data.get("servings")
-        original_servings = data.get("original_servings")
-
-        # Build the prompt. Being explicit about the output format is important —
-        # Gemini is good at following instructions when they're unambiguous.
-        # We ask for a JSON array (not an object) so we can parse it directly
-        # into the ingredients list without any extra unwrapping.
-        prompt = f"""You are a recipe scaling assistant.
-        Rewrite the following ingredient list for {target_servings} servings instead of {original_servings} servings.
-        Scale all quantities proportionally. Keep the ingredient names and units the same — only change the amounts.
-        Return only a valid JSON array of strings, one string per ingredient.
-        No markdown, no explanation, no wrapper object — just the array.
-
-        Ingredients:
-        {json.dumps(json.loads(recipe.ingredients))}
-        """
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[prompt]
-        )
-
-        text = response.text.strip()
-        # Strip markdown code fences if Gemini adds them, same pattern used elsewhere
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1]
-            text = text.rsplit("```", 1)[0]
-
-        scaled_ingredients = json.loads(text)
-        return {"ingredients": scaled_ingredients}
-
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Could not parse scaled ingredients")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:

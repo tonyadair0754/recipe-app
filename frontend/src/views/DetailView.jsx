@@ -142,7 +142,10 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     setScaling(true);
     try {
       // Pass both serving counts so the backend can tell Gemini the ratio
-      const data = await scaleRecipe(recipe.id, targetServings, originalServings, token);
+      const ingredients = displayed.ingredients.map((item) =>
+        typeof item === "string" ? item : item.text
+      );
+      const data = await scaleRecipe(ingredients, originalServings, targetServings);
       setScaledIngredients(data.ingredients);
     } catch (e) {
       alert("Scaling failed");
@@ -241,65 +244,63 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
           {!translating && (
             <>
               {/* Servings scaler — only shown for authenticated users on non-Korean recipes in view mode */}
-              {!isKorean && !isGuest && (
-                <div className="scaler-bar">
-                  <span className="scaler-label">Scale recipe:</span>
+              <div className="scaler-bar">
+                <span className="scaler-label">Scale recipe:</span>
 
-                  {/* Original servings — what the recipe currently makes */}
-                  <label className="scaler-field">
-                    From
-                    <input
-                      type="number"
-                      min="1"
-                      value={originalServings}
-                      onChange={(e) => {
-                        setOriginalServings(Number(e.target.value));
-                        // Clear any existing scaled result when the inputs change,
-                        // so the displayed ingredients always match the current inputs
-                        setScaledIngredients(null);
-                      }}
-                      className="scaler-input"
-                    />
-                    servings
-                  </label>
+                {/* Original servings — what the recipe currently makes */}
+                <label className="scaler-field">
+                  From
+                  <input
+                    type="number"
+                    min="1"
+                    value={originalServings}
+                    onChange={(e) => {
+                      setOriginalServings(Number(e.target.value));
+                      // Clear any existing scaled result when the inputs change,
+                      // so the displayed ingredients always match the current inputs
+                      setScaledIngredients(null);
+                    }}
+                    className="scaler-input"
+                  />
+                  servings
+                </label>
 
-                  <span className="scaler-arrow">→</span>
+                <span className="scaler-arrow">→</span>
 
-                  {/* Target servings — what the user wants */}
-                  <label className="scaler-field">
-                    To
-                    <input
-                      type="number"
-                      min="1"
-                      value={targetServings}
-                      onChange={(e) => {
-                        setTargetServings(Number(e.target.value));
-                        setScaledIngredients(null);
-                      }}
-                      className="scaler-input"
-                    />
-                    servings
-                  </label>
+                {/* Target servings — what the user wants */}
+                <label className="scaler-field">
+                  To
+                  <input
+                    type="number"
+                    min="1"
+                    value={targetServings}
+                    onChange={(e) => {
+                      setTargetServings(Number(e.target.value));
+                      setScaledIngredients(null);
+                    }}
+                    className="scaler-input"
+                  />
+                  servings
+                </label>
 
+                <button
+                  className="btn-secondary"
+                  onClick={handleScale}
+                  disabled={scaling || originalServings < 1 || targetServings < 1}
+                >
+                  {scaling ? "Scaling…" : "Scale"}
+                </button>
+
+                {/* Reset button only appears once we have a scaled result */}
+                {scaledIngredients && (
                   <button
-                    className="btn-secondary"
-                    onClick={handleScale}
-                    disabled={scaling || originalServings < 1 || targetServings < 1}
+                    className="btn-add"
+                    onClick={() => setScaledIngredients(null)}
                   >
-                    {scaling ? "Scaling…" : "Scale"}
+                    Reset
                   </button>
-
-                  {/* Reset button only appears once we have a scaled result */}
-                  {scaledIngredients && (
-                    <button
-                      className="btn-add"
-                      onClick={() => setScaledIngredients(null)}
-                    >
-                      Reset
-                    </button>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
               <p className="section-heading">{ingredientsLabel}</p>
               <ul className="detail-list">
                 {(scaledIngredients || displayed.ingredients).map((item, i) => (
