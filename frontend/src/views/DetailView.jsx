@@ -2,6 +2,7 @@ import { useState } from "react";
 import RecipeEditor from "../components/RecipeEditor";
 import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeImage_toStorage, scaleRecipe } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { tryScaleAll } from "../utils/scaleUtils";
 
 const BASE = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 
@@ -141,12 +142,30 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const handleScale = async () => {
     setScaling(true);
     try {
-      // Pass both serving counts so the backend can tell Gemini the ratio
       const ingredients = displayed.ingredients.map((item) =>
         typeof item === "string" ? item : item.text
       );
-      const data = await scaleRecipe(ingredients, originalServings, targetServings);
-      setScaledIngredients(data.ingredients);
+      const ratio = targetServings / originalServings;
+
+      // First pass: scale everything we can with math
+      const { scaled, needsGemini } = tryScaleAll(ingredients, ratio);
+
+      if (needsGemini.length === 0) {
+        // All ingredients parsed successfully — no API call needed
+        setScaledIngredients(scaled);
+        return;
+      }
+
+      // Second pass: send only the unparseable ingredients to Gemini
+      const hardIngredients = needsGemini.map((i) => ingredients[i]);
+      const data = await scaleRecipe(hardIngredients, originalServings, targetServings);
+
+      // Splice Gemini's results back into the correct positions
+      needsGemini.forEach((originalIndex, geminiIndex) => {
+        scaled[originalIndex] = data.ingredients[geminiIndex];
+      });
+
+      setScaledIngredients(scaled);
     } catch (e) {
       alert("Scaling failed");
     } finally {
@@ -286,7 +305,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
                 <button
                   className="btn-secondary"
                   onClick={handleScale}
-                  disabled={scaling || originalServings < 1 || targetServings < 1}
+                  disabled={scaling || originalServings < 1 || targetServings < 1 || originalServings === targetServings}
                 >
                   {scaling ? "Scaling…" : "Scale"}
                 </button>
@@ -308,7 +327,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
                     {item}
                     {/* Show a subtle tag on scaled ingredients so the user knows they're looking at scaled amounts */}
                     {scaledIngredients && i === 0 && (
-                      <span className="scaler-badge">{targetServings} servings</span>
+                      <span className="scaler-badge">×{(targetServings / originalServings).toFixed(2).replace(/\.?0+$/, "")}</span>
                     )}
                   </li>
                 ))}
