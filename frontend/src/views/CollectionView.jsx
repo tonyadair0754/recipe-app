@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { formatIngredient } from "../utils/parseUtils";
 
 export default function CollectionView({ saved, onSelect }) {
   const { isGuest } = useAuth();
@@ -12,8 +13,11 @@ export default function CollectionView({ saved, onSelect }) {
     // Check title
     if (r.title.toLowerCase().includes(q)) return true;
 
-    // Check ingredients (array of strings)
-    if (r.ingredients.some((ing) => ing.toLowerCase().includes(q))) return true;
+    // Check ingredients (may be structured objects { amount, unit, name } or plain strings)
+    if (r.ingredients.some((ing) => {
+      const text = typeof ing === "string" ? ing : formatIngredient(ing);
+      return text.toLowerCase().includes(q);
+    })) return true;
 
     // Check instructions (may be strings or {text, images} objects)
     if (r.instructions.some((step) => {
@@ -70,7 +74,7 @@ export default function CollectionView({ saved, onSelect }) {
               )}
               <h3>{r.title}</h3>
               <p className="recipe-card-meta">
-                {r.ingredients.length} ingredients · {r.instructions.length} steps
+                {r.ingredients.length} ingredient{r.ingredients.length !== 1 ? "s" : ""} · {r.instructions.length} step{r.instructions.length !== 1 ? "s" : ""}
                 {r.language === "ko" && <span className="lang-tag">한국어</span>}
               </p>
             </div>
