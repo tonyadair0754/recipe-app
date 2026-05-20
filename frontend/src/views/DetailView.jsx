@@ -3,14 +3,25 @@ import RecipeEditor from "../components/RecipeEditor";
 import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeImage_toStorage, scaleRecipe } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { tryScaleAll } from "../utils/scaleUtils";
+import { formatIngredient } from "../utils/parseUtils";
 
 const BASE = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 
 const toItems = (arr) =>
   (arr || []).map((item, i) => ({
     id: `item-${Date.now()}-${i}`,
-    text: typeof item === "string" ? item : item.text,
+    // Ingredients are now structured objects { amount, unit, name } —
+    // format them back to a readable string for the editor's text field.
+    // Instructions are objects with a text field.
+    // Old recipes are plain strings. Handle all three.
+    text: typeof item === "string"
+      ? item
+      : item.text !== undefined
+        ? item.text
+        : formatIngredient(item),
     images: typeof item === "string" ? [] : (item.images || []),
+    // Preserve the structured object so RecipeEditor can skip re-parsing it
+    structured: item.amount !== undefined ? item : undefined,
   }));
 
 async function translateTextForGuest(recipe) {
@@ -65,13 +76,16 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const handleSaveEdits = async () => {
     try {
       if (isGuest) {
-        // editImageFile is already a base64 string for guests (converted inside RecipeEditor)
         const image_url = editImageFile
           ? editImageFile
           : removeExistingImage ? null : recipe.image_url;
         const updated = {
           title: editTitle,
-          ingredients: editIngredients.map((i) => i.text),
+          // Use the structured object if present, otherwise fall back to
+          // { amount: null, unit: null, name: text } so storage is always consistent
+          ingredients: editIngredients.map((i) =>
+            i.structured || { amount: null, unit: null, name: i.text }
+          ),
           instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
           image_url,
         };
@@ -87,9 +101,13 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         const result = await uploadRecipeImage_toStorage(editImageFile, token);
         image_url = result.image_url;
       }
+      // Same structured serialization for auth users
+      const ingredients = editIngredients.map((i) =>
+        i.structured || { amount: null, unit: null, name: i.text }
+      );
       await updateRecipe(recipe.id, {
         title: editTitle,
-        ingredients: editIngredients.map((i) => i.text),
+        ingredients,
         instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
         notes: recipe.notes || [],
         language: recipe.language,
@@ -98,7 +116,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       onUpdated({
         ...recipe,
         title: editTitle,
-        ingredients: editIngredients.map((i) => i.text),
+        ingredients,
         instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
         image_url,
       });
@@ -142,22 +160,26 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const handleScale = async () => {
     setScaling(true);
     try {
-      const ingredients = displayed.ingredients.map((item) =>
-        typeof item === "string" ? item : item.text
-      );
       const ratio = targetServings / originalServings;
 
+      // displayed.ingredients are now structured objects { amount, unit, name }
+      // for new recipes, or plain strings for old ones — tryScaleAll handles both
+      // since it calls tryParseIngredient internally
+      const ingredientStrings = displayed.ingredients.map((item) =>
+        typeof item === "string" ? item : formatIngredient(item)
+      );
+
       // First pass: scale everything we can with math
-      const { scaled, needsGemini } = tryScaleAll(ingredients, ratio);
+      const { scaled, needsGemini } = tryScaleAll(ingredientStrings, ratio);
 
       if (needsGemini.length === 0) {
-        // All ingredients parsed successfully — no API call needed
+        // All ingredients scaled client-side — no API call needed
         setScaledIngredients(scaled);
         return;
       }
 
       // Second pass: send only the unparseable ingredients to Gemini
-      const hardIngredients = needsGemini.map((i) => ingredients[i]);
+      const hardIngredients = needsGemini.map((i) => ingredientStrings[i]);
       const data = await scaleRecipe(hardIngredients, originalServings, targetServings);
 
       // Splice Gemini's results back into the correct positions
@@ -324,8 +346,10 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
               <ul className="detail-list">
                 {(scaledIngredients || displayed.ingredients).map((item, i) => (
                   <li key={i}>
-                    {item}
-                    {/* Show a subtle tag on scaled ingredients so the user knows they're looking at scaled amounts */}
+                    {/* Format structured ingredients as readable strings.
+                        Scaled ingredients are already plain strings from tryScaleAll/Gemini.
+                        Old recipes are plain strings too — typeof check handles both. */}
+                    {typeof item === "string" ? item : formatIngredient(item)}
                     {scaledIngredients && i === 0 && (
                       <span className="scaler-badge">×{(targetServings / originalServings).toFixed(2).replace(/\.?0+$/, "")}</span>
                     )}

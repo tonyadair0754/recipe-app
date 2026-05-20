@@ -74,10 +74,18 @@ export const translateRecipe = async (id, language = "Korean", token) => {
   return res.data;
 };
 
-// Asks the backend to scale the ingredient quantities for a different serving count
+// Scales ingredient objects { amount, unit, name } that couldn't be scaled client-side.
+// Sends only the hard cases (e.g. "juice of 1 lemon") rather than the full list.
 export const scaleRecipe = (ingredients, originalServings, targetServings) =>
   api.post("/scale-text", {
     ingredients,
     original_servings: originalServings,
     target_servings: targetServings,
   }).then((res) => res.data);
+
+// Sends unparseable ingredient strings to Gemini for structured parsing.
+// Only called for ingredients that couldn't be parsed client-side,
+// so API usage is minimized.
+export const parseIngredients = (ingredients) =>
+  api.post("/parse-ingredients", { ingredients })
+    .then((res) => res.data);

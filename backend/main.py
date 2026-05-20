@@ -123,9 +123,20 @@ async def upload(
         Look at this recipe image and extract the information into JSON.
         Return only valid JSON with exactly these keys:
         - title (string)
-        - ingredients (list of strings)
+        - ingredients (list of objects with keys: amount (number or null), unit (string or null), name (string))
         - instructions (list of strings)
         - notes (list of strings, can be empty)
+
+        For ingredients, parse each one into its components:
+        - amount: the numeric quantity (e.g. 2, 0.5, 1.5), or null if there is none
+        - unit: the unit of measurement normalized to singular lowercase (e.g. "cup", "tsp", "g"), or null if there is none
+        - name: the ingredient name (e.g. "flour", "eggs", "salt to taste")
+
+        Examples:
+        "2 cups flour" → {"amount": 2, "unit": "cup", "name": "flour"}
+        "1/2 tsp salt" → {"amount": 0.5, "unit": "tsp", "name": "salt"}
+        "2 eggs"       → {"amount": 2, "unit": null, "name": "eggs"}
+        "salt to taste" → {"amount": null, "unit": null, "name": "salt to taste"}
 
         Each instruction should be a complete step without any leading numbers.
         If you cannot find a value, use an empty list.
@@ -205,9 +216,19 @@ def save_recipe(data: dict, current_user=Depends(get_current_user)):
 
 @app.post("/translate-text")
 async def translate_text(body: dict):
+    # Ingredients are now structured objects — extract just the names for translation
+    # since amounts and units don't need translating
+    raw_ingredients = body.get('ingredients', [])
+    ingredient_strings = [
+        f"{i.get('amount', '')} {i.get('unit', '')} {i.get('name', '')}".strip()
+        if isinstance(i, dict)
+        else i  # backward compatibility with plain strings
+        for i in raw_ingredients
+    ]
+
     recipe_text = f"""Title: {body.get('title')}
-Ingredients: {json.dumps(body.get('ingredients', []))}
-Instructions: {json.dumps(body.get('instructions', []))}"""
+    Ingredients: {json.dumps(ingredient_strings)}
+    Instructions: {json.dumps(body.get('instructions', []))}"""
 
     prompt = f"""Translate this recipe to Korean. Return only valid JSON with keys: title (string), ingredients (array of strings), instructions (array of strings). No markdown, no explanation.
 
@@ -221,24 +242,24 @@ Instructions: {json.dumps(body.get('instructions', []))}"""
     text = re.sub(r"^```json\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
     return json.loads(text)
-
 @app.post("/scale-text")
 async def scale_text(body: dict):
-    # Accept raw ingredients + serving counts directly, no DB lookup needed.
-    # This lets guests and any caller scale without needing a saved recipe ID.
+    # Accepts structured ingredient objects { amount, unit, name } for the hard cases
+    # that couldn't be scaled client-side (e.g. "juice of 1 lemon")
     ingredients = body.get("ingredients", [])
     original_servings = body.get("original_servings")
     target_servings = body.get("target_servings")
 
     prompt = f"""You are a recipe scaling assistant.
-    Rewrite the following ingredient list for {target_servings} servings instead of {original_servings} servings.
-    Scale all quantities proportionally. Keep the ingredient names and units the same — only change the amounts.
-    Return only a valid JSON array of strings, one string per ingredient.
-    No markdown, no explanation, no wrapper object — just the array.
+Scale each ingredient's amount for {target_servings} servings instead of {original_servings} servings.
+Each ingredient is a JSON object with keys: amount (number or null), unit (string or null), name (string).
+Scale the amount proportionally. Do not change the unit or name.
+Return only a valid JSON array of objects in the same format and order.
+No markdown, no explanation — just the array.
 
-    Ingredients:
-    {json.dumps(ingredients)}
-    """
+Ingredients:
+{json.dumps(ingredients)}
+"""
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
@@ -246,7 +267,6 @@ async def scale_text(body: dict):
     )
 
     text = response.text.strip()
-    # Strip markdown code fences if Gemini adds them, same pattern used elsewhere
     if text.startswith("```"):
         text = text.split("\n", 1)[1]
         text = text.rsplit("```", 1)[0]
@@ -362,3 +382,40 @@ def translate_recipe(recipe_id: int, data: dict, current_user=Depends(get_curren
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
+
+@app.post("/parse-ingredients")
+async def parse_ingredients(body: dict):
+    # Accepts a list of raw ingredient strings that couldn't be parsed client-side
+    # and returns a list of structured { amount, unit, name } objects.
+    # No auth required — same pattern as /translate-text and /scale-text.
+    ingredients = body.get("ingredients", [])
+
+    prompt = f"""Parse each ingredient string into a structured object with these keys:
+    - amount: the numeric quantity as a number (e.g. 2, 0.5, 1.5), or null if there is none
+    - unit: the unit of measurement normalized to singular lowercase (e.g. "cup", "tsp", "g"), or null if there is none  
+    - name: the ingredient name as a string
+
+    Examples:
+    "juice of 1 lemon" → {{"amount": 1, "unit": null, "name": "lemon juice"}}
+    "a handful of parsley" → {{"amount": 1, "unit": "handful", "name": "parsley"}}
+    "salt to taste" → {{"amount": null, "unit": null, "name": "salt to taste"}}
+
+    Return only a valid JSON array of objects, one per ingredient, in the same order.
+    No markdown, no explanation, no wrapper object — just the array.
+
+    Ingredients:
+    {json.dumps(ingredients)}
+    """
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[prompt]
+    )
+
+    text = response.text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1]
+        text = text.rsplit("```", 1)[0]
+
+    parsed = json.loads(text)
+    return {"ingredients": parsed}

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import EditableList from "./EditableList";
-import { uploadRecipeImage_toStorage } from "../api";
+import { uploadRecipeImage_toStorage, parseIngredients } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { imageToBase64 } from "../utils/imageUtils";
+import { tryParseIngredient, formatIngredient } from "../utils/parseUtils";
 
 export default function RecipeEditor({
   ingredients,
@@ -23,6 +24,11 @@ export default function RecipeEditor({
   // For guests, hold the base64 string so we can restore it if the user
   // unchecks then rechecks "save this image"
   const [base64Cache, setBase64Cache] = useState(null);
+
+  // Parsing state — holds the structured ingredient objects during the
+  // confirmation step, or null when not in confirmation mode
+  const [parsedIngredients, setParsedIngredients] = useState(null);
+  const [isParsing, setIsParsing] = useState(false);
 
   // When a scanned image is passed in, show it as the preview automatically
   useEffect(() => {
@@ -113,6 +119,87 @@ export default function RecipeEditor({
     setInstructions(updated);
   };
 
+  // Called when the user clicks Save. Parses ingredients before actually saving.
+  const handleSaveClick = async () => {
+    setIsParsing(true);
+    try {
+      const results = [];
+      const needsGemini = []; // indices of ingredients that couldn't be parsed client-side
+
+      for (let i = 0; i < ingredients.length; i++) {
+        const raw = ingredients[i].text.trim();
+
+        // Skip empty rows — the user may have added a blank ingredient accidentally
+        if (!raw) continue;
+
+        // Check if this ingredient is already structured (e.g. came from a scanned recipe)
+        // If so, no parsing needed
+        if (typeof ingredients[i].structured === "object" && ingredients[i].structured !== null) {
+          results.push({ index: i, parsed: ingredients[i].structured });
+          continue;
+        }
+
+        const parsed = tryParseIngredient(raw);
+        if (parsed !== null) {
+          results.push({ index: i, parsed });
+        } else {
+          // Couldn't parse client-side — queue for Gemini
+          results.push({ index: i, parsed: null });
+          needsGemini.push({ resultIndex: results.length - 1, text: raw });
+        }
+      }
+
+      // Send unparseable ingredients to Gemini in one batch
+      if (needsGemini.length > 0) {
+        const geminiResult = await parseIngredients(needsGemini.map((g) => g.text));
+        // Splice Gemini's results back into the correct positions
+        needsGemini.forEach(({ resultIndex }, geminiIndex) => {
+          results[resultIndex].parsed = geminiResult.ingredients[geminiIndex];
+        });
+      }
+
+      // Show confirmation UI with the parsed results
+      setParsedIngredients(results.map((r) => ({
+        // The original text the user typed, for display in the confirmation UI
+        original: ingredients[r.index].text,
+        // The structured object we'll save if the user confirms
+        parsed: r.parsed,
+        // Whether the user has edited this row in the confirmation UI
+        // We start with the formatted version of the parsed result
+        confirmed: formatIngredient(r.parsed),
+      })));
+    } catch (e) {
+      console.error("Parsing failed:", e);
+      alert("Could not parse ingredients");
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // Called when the user confirms the parsed ingredients and actually saves
+  const handleConfirmSave = () => {
+    // Convert confirmed strings back to structured objects for storage.
+    // The user may have edited the confirmed text, so we re-parse it.
+    // If re-parsing fails, we fall back to storing it as { amount: null, unit: null, name: text }
+    // so nothing is lost.
+    const finalIngredients = parsedIngredients.map((item) => {
+      const reParsed = tryParseIngredient(item.confirmed);
+      return reParsed || { amount: null, unit: null, name: item.confirmed };
+    });
+
+    // Update the ingredients list with the final structured objects,
+    // keeping the existing id and images fields intact
+    const updatedItems = finalIngredients.map((parsed, i) => ({
+      id: ingredients[i]?.id || `ing-${Date.now()}-${i}`,
+      text: formatIngredient(parsed),
+      structured: parsed,
+    }));
+
+    setIngredients(updatedItems);
+    setParsedIngredients(null);
+    onSave();
+  };
+
   // This is the renderExtra function passed to EditableList for instructions
   const renderStepImages = (item, i) => (
     <div style={{ marginTop: "8px", paddingLeft: "28px" }}>
@@ -143,6 +230,45 @@ export default function RecipeEditor({
       </label>
     </div>
   );
+
+  // ── Confirmation UI ──
+  // Shown after parsing, before the actual save
+  if (parsedIngredients) {
+    return (
+      <div className="recipe-editor">
+        <p className="section-heading">Confirm ingredients</p>
+        <p style={{ fontSize: "13px", color: "#666", marginBottom: "16px" }}>
+          Review how your ingredients were parsed. You can edit any line before saving.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+          {parsedIngredients.map((item, i) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              {/* Show the original text in grey so the user can compare */}
+              <span style={{ fontSize: "12px", color: "#999" }}>Original: {item.original}</span>
+              <input
+                className="editable-input"
+                value={item.confirmed}
+                onChange={(e) => {
+                  // Let the user edit the confirmed text inline
+                  const updated = [...parsedIngredients];
+                  updated[i] = { ...updated[i], confirmed: e.target.value };
+                  setParsedIngredients(updated);
+                }}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="editor-actions">
+          <button className="btn-primary" onClick={handleConfirmSave}>
+            {saveLabel || "Save"}
+          </button>
+          <button className="btn-secondary" onClick={() => setParsedIngredients(null)}>
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="recipe-editor">
@@ -208,7 +334,10 @@ export default function RecipeEditor({
       </button>
 
       <div className="editor-actions">
-        <button className="btn-primary" onClick={onSave}>{saveLabel || "Save"}</button>
+        {/* handleSaveClick parses ingredients first, then shows confirmation UI */}
+        <button className="btn-primary" onClick={handleSaveClick} disabled={isParsing}>
+          {isParsing ? "Parsing…" : (saveLabel || "Save")}
+        </button>
         {onCancel && (
           <button className="btn-secondary" onClick={onCancel}>Cancel</button>
         )}
