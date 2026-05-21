@@ -9,8 +9,19 @@ export function tryScaleIngredient(ingredient, ratio) {
   // If we couldn't parse it, signal to the caller to use Gemini
   if (parsed === null) return null;
 
-  // If there's no amount (e.g. "salt to taste"), there's nothing to scale
-  if (parsed.amount === null) return ingredient;
+  // If there's no amount, we can't scale mathematically — signal to
+  // the caller to send this to Gemini instead of returning it unchanged
+  if (parsed.amount === null) return null;
+
+  if (parsed.amount === null) {
+    // "salt to taste", "pepper to taste" etc. genuinely have no quantity —
+    // return as-is rather than sending to Gemini, which can't scale them either
+    const lowerName = parsed.name.toLowerCase();
+    if (lowerName.includes("to taste") || lowerName.includes("as needed")) {
+      return ingredient;
+    }
+    return null;
+  }
 
   return formatIngredient({ ...parsed, amount: parsed.amount * ratio });
 }

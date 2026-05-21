@@ -48,8 +48,10 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const [editTitle, setEditTitle] = useState("");
   const [editIngredients, setEditIngredients] = useState([]);
   const [editInstructions, setEditInstructions] = useState([]);
+
   const [editImageFile, setEditImageFile] = useState(null);
   const [removeExistingImage, setRemoveExistingImage] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
 
   const [translated, setTranslated] = useState(null);
   const [showingTranslation, setShowingTranslation] = useState(false);
@@ -162,27 +164,29 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     try {
       const ratio = targetServings / originalServings;
 
-      // displayed.ingredients are now structured objects { amount, unit, name }
-      // for new recipes, or plain strings for old ones — tryScaleAll handles both
-      // since it calls tryParseIngredient internally
+      // Normalize ingredients to plain strings for scaling.
+      // Korean ingredients are already plain strings; English ones may be
+      // structured objects that need formatting first.
       const ingredientStrings = displayed.ingredients.map((item) =>
         typeof item === "string" ? item : formatIngredient(item)
       );
 
-      // First pass: scale everything we can with math
+      // First pass: try client-side math for everything
       const { scaled, needsGemini } = tryScaleAll(ingredientStrings, ratio);
 
       if (needsGemini.length === 0) {
-        // All ingredients scaled client-side — no API call needed
         setScaledIngredients(scaled);
         return;
       }
 
-      // Second pass: send only the unparseable ingredients to Gemini
-      const hardIngredients = needsGemini.map((i) => ingredientStrings[i]);
-      const data = await scaleRecipe(hardIngredients, originalServings, targetServings);
+      // Second pass: send unparseable ingredients to Gemini as plain strings.
+      // For Korean recipes this will be all ingredients; for English recipes
+      // just the ones tryScaleAll couldn't handle (e.g. "juice of 1 lemon").
+      // We send plain strings here regardless — /scale-text handles both.
+      const hardStrings = needsGemini.map((i) => ingredientStrings[i]);
+      const data = await scaleRecipe(hardStrings, originalServings, targetServings);
 
-      // Splice Gemini's results back into the correct positions
+      // Splice results back into the correct positions
       needsGemini.forEach((originalIndex, geminiIndex) => {
         scaled[originalIndex] = data.ingredients[geminiIndex];
       });
@@ -211,7 +215,11 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       if (isGuest) {
         addGuestRecipe({
           title: translated.title,
-          ingredients: translated.ingredients,
+          // translated.ingredients are plain Korean strings from Gemini — store them as-is.
+          // Don't pass them through structuring since Korean word order breaks our formatter.
+          ingredients: translated.ingredients.map((ing) =>
+            typeof ing === "string" ? ing : formatIngredient(ing)
+          ),
           instructions: translatedInstructions,
           notes: [],
           language: "ko",
@@ -223,7 +231,9 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       }
       const saved = await saveRecipe({
         title: translated.title,
-        ingredients: translated.ingredients,
+        ingredients: translated.ingredients.map((ing) =>
+          typeof ing === "string" ? ing : formatIngredient(ing)
+        ),
         instructions: translatedInstructions,
         notes: [],
         language: "ko",
@@ -266,10 +276,15 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             </div>
           </div>
 
+          {/* Header image */}
           {recipe.image_url && !removeExistingImage && (
             <div style={{ marginBottom: "16px", marginTop: "12px" }}>
-              <img src={recipe.image_url} alt={recipe.title}
-                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }} />
+              <img
+                src={recipe.image_url}
+                alt={recipe.title}
+                onClick={() => setLightboxUrl(recipe.image_url)}
+                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px", cursor: "zoom-in" }}
+              />
             </div>
           )}
 
@@ -363,13 +378,19 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
                   const text = typeof step === "string" ? step : step.text;
                   const images = typeof step === "string" ? [] : (step.images || []);
                   return (
-                    <li key={i} style={{ display: "flex", flexDirection: "column", marginBottom: "16px" }}>
+                    <li key={i} style={{ display: "flex", flexDirection: "column", marginBottom: "10px" }}>
                       <div><span className="step-num">{i + 1}</span>{text}</div>
                       {images.length > 0 && (
                         <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                          {/* Step images */}
                           {images.map((url, imgIndex) => (
-                            <img key={imgIndex} src={url} alt={`Step ${i + 1}`}
-                              style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px" }} />
+                            <img
+                              key={imgIndex}
+                              src={url}
+                              alt={`Step ${i + 1}`}
+                              onClick={() => setLightboxUrl(url)}
+                              style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px", cursor: "zoom-in" }}
+                            />
                           ))}
                         </div>
                       )}
@@ -412,8 +433,26 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             hasExistingImage={!!recipe.image_url && !removeExistingImage}
             onImageChange={setEditImageFile}
             onRemoveExisting={() => setRemoveExistingImage(true)}
+            hidePhotoHeading={!!recipe.image_url && !removeExistingImage}
           />
         </>
+      )}
+    {/* Lightbox — clicking any image opens it here at full size */}
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 1000, cursor: "zoom-out", padding: "24px",
+          }}
+        >
+          <img
+            src={lightboxUrl}
+            alt="Full size"
+            style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: "8px", objectFit: "contain" }}
+          />
+        </div>
       )}
     </>
   );

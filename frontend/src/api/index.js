@@ -74,8 +74,8 @@ export const translateRecipe = async (id, language = "Korean", token) => {
   return res.data;
 };
 
-// Scales ingredient objects { amount, unit, name } that couldn't be scaled client-side.
-// Sends only the hard cases (e.g. "juice of 1 lemon") rather than the full list.
+// Scales ingredient objects { amount, unit, name } that couldn't be handled client-side.
+// Sends plain strings so it works for both English and Korean recipes.
 export const scaleRecipe = (ingredients, originalServings, targetServings) =>
   api.post("/scale-text", {
     ingredients,

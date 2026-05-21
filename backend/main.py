@@ -242,19 +242,20 @@ async def translate_text(body: dict):
     text = re.sub(r"^```json\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
     return json.loads(text)
+
 @app.post("/scale-text")
 async def scale_text(body: dict):
-    # Accepts structured ingredient objects { amount, unit, name } for the hard cases
-    # that couldn't be scaled client-side (e.g. "juice of 1 lemon")
+    # Accepts plain ingredient strings — works for both English and Korean.
+    # Client-side scaling handles structured English ingredients; this endpoint
+    # only receives the cases that couldn't be parsed (including all Korean ingredients).
     ingredients = body.get("ingredients", [])
     original_servings = body.get("original_servings")
     target_servings = body.get("target_servings")
 
     prompt = f"""You are a recipe scaling assistant.
-Scale each ingredient's amount for {target_servings} servings instead of {original_servings} servings.
-Each ingredient is a JSON object with keys: amount (number or null), unit (string or null), name (string).
-Scale the amount proportionally. Do not change the unit or name.
-Return only a valid JSON array of objects in the same format and order.
+Rewrite the following ingredient list for {target_servings} servings instead of {original_servings} servings.
+Scale all quantities proportionally. Keep the ingredient names and units the same — only change the amounts.
+Return only a valid JSON array of strings, one string per ingredient, in the same order.
 No markdown, no explanation — just the array.
 
 Ingredients:

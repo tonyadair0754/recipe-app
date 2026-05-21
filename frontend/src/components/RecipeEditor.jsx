@@ -17,14 +17,15 @@ export default function RecipeEditor({
   hasExistingImage,
   onImageChange,
   onRemoveExisting,
+  hidePhotoHeading,
 }) {
   const { token, isGuest } = useAuth();
   const [preview, setPreview] = useState(null);
   const [saveImage, setSaveImage] = useState(false);
   // For guests, hold the base64 string so we can restore it if the user
   // unchecks then rechecks "save this image"
+  const [lightboxUrl, setLightboxUrl] = useState(null);
   const [base64Cache, setBase64Cache] = useState(null);
-
   const [isParsing, setIsParsing] = useState(false);
 
   // When a scanned image is passed in, show it as the preview automatically
@@ -117,6 +118,13 @@ export default function RecipeEditor({
   };
 
   const handleSaveClick = async () => {
+    // If there are no ingredients (or all are blank), skip parsing and save directly
+    const nonEmpty = ingredients.filter((i) => i.text.trim());
+    if (nonEmpty.length === 0) {
+      onSave();
+      return;
+    }
+
     setIsParsing(true);
     try {
       const results = [];
@@ -173,7 +181,8 @@ export default function RecipeEditor({
           <img
             src={url}
             alt={`Step ${i + 1}`}
-            style={{ height: "80px", width: "80px", objectFit: "cover", borderRadius: "6px" }}
+            onClick={() => setLightboxUrl(url)}
+            style={{ height: "80px", width: "80px", objectFit: "cover", borderRadius: "6px", cursor: "zoom-in" }}
           />
           <button
             className="btn-remove"
@@ -198,7 +207,7 @@ export default function RecipeEditor({
 
   return (
     <div className="recipe-editor">
-      <p className="section-heading">Photo</p>
+      {!hidePhotoHeading && <p className="section-heading">Photo</p>}
       {preview ? (
         <div style={{ marginBottom: "12px" }}>
           <img
@@ -267,6 +276,24 @@ export default function RecipeEditor({
         {onCancel && (
           <button className="btn-secondary" onClick={onCancel}>Cancel</button>
         )}
+
+      {/* Lightbox — clicking any image opens it here at full size */}
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 1000, cursor: "zoom-out", padding: "24px",
+          }}
+        >
+          <img
+            src={lightboxUrl}
+            alt="Full size"
+            style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: "8px", objectFit: "contain" }}
+          />
+        </div>
+      )}  
       </div>
     </div>
   );

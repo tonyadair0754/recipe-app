@@ -494,17 +494,20 @@ textarea:focus { border-color: #2d6a4f; }
 .detail-list {
   list-style: none;
   padding: 0;
-  margin-bottom: 8px;
+  margin: 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .detail-list li {
-  font-size: 14px;
-  color: #444;
-  padding: 10px 0;
-  border-bottom: 0.5px solid #f0f0ea;
+  padding: 9px 12px;
+  margin: 2px 0;
+  background: var(--color-background-secondary, #ecece8);
+  border: 1px solid var(--color-border-secondary, #d8d8d2);
+  border-radius: 8px;
+  font-size: 15px;
   line-height: 1.5;
-  display: flex;
-  gap: 10px;
 }
 
 .detail-list li .step-num {

@@ -13,6 +13,9 @@
 
 // Canonical unit names — we normalize variations to these
 // so "cups", "Cup", "CUPS" all become "cup"
+// Maps Unicode vulgar fraction characters to their ASCII equivalents.
+// These appear in recipe text copied from websites or typed on mobile keyboards.
+
 const UNIT_MAP = {
   // Volume
   cup: "cup", cups: "cup",
@@ -44,6 +47,13 @@ const UNIT_MAP = {
   stick: "stick", sticks: "stick",
 };
 
+// These appear in recipe text copied from websites or typed on mobile keyboards.
+const UNICODE_FRACTIONS = {
+  "½": "1/2", "¼": "1/4", "¾": "3/4",
+  "⅓": "1/3", "⅔": "2/3",
+  "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
+};
+
 // Matches a leading quantity: "2", "1/2", "1 1/2", "2.5"
 const QUANTITY_RE = /^(\d+\s+\d+\/\d+|\d+\/\d+|\d+\.?\d*)\s*/;
 
@@ -68,7 +78,11 @@ function parseQuantity(raw) {
 // Returns null if the string is too ambiguous for client-side parsing
 // (caller should send those to Gemini instead).
 export function tryParseIngredient(ingredient) {
-  const str = ingredient.trim();
+  // Normalize Unicode fraction characters to ASCII before parsing
+  let str = ingredient.trim();
+  for (const [unicode, ascii] of Object.entries(UNICODE_FRACTIONS)) {
+    str = str.replaceAll(unicode, ascii);
+  }
 
   // Step 1: try to extract a leading quantity
   const quantityMatch = str.match(QUANTITY_RE);

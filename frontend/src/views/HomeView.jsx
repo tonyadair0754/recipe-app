@@ -2,12 +2,19 @@ import { useState } from "react";
 import RecipeEditor from "../components/RecipeEditor";
 import { uploadRecipeImage, saveRecipe, uploadRecipeImage_toStorage } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { formatIngredient } from "../utils/parseUtils";
 
 const toItems = (arr) =>
   (arr || []).map((item, i) => ({
     id: `item-${Date.now()}-${i}`,
-    text: typeof item === "string" ? item : item.text,
+    text: typeof item === "string"
+      ? item
+      : item.text !== undefined
+        ? item.text
+        : formatIngredient(item),
     images: typeof item === "string" ? [] : (item.images || []),
+    // Preserve the structured object so RecipeEditor can skip re-parsing it
+    structured: item.amount !== undefined ? item : undefined,
   }));
 
 export default function HomeView({ onSaved }) {
@@ -56,11 +63,13 @@ export default function HomeView({ onSaved }) {
   const handleSaveUploaded = async () => {
     try {
       if (isGuest) {
-        // Store image as a local object URL (stays in memory this session)
         const image_url = imageToSave || null;
         addGuestRecipe({
           title: editedTitle,
-          ingredients: ingredients.map((i) => i.text),
+          // Use structured object if present, otherwise fall back to plain string —
+          // same pattern as DetailView so storage is always consistent
+          ingredients: ingredients.map((i) => i.structured || { amount: null, unit: null, name: i.text }),
+          // Preserve step images — don't flatten to i.text
           instructions: instructions.map((i) => ({ text: i.text, images: i.images || [] })),
           notes: recipe.notes || [],
           image_url,
@@ -78,8 +87,9 @@ export default function HomeView({ onSaved }) {
       }
       await saveRecipe({
         title: editedTitle,
-        ingredients: ingredients.map((i) => i.text),
-        instructions: instructions.map((i) => i.text),
+        ingredients: ingredients.map((i) => i.structured || { amount: null, unit: null, name: i.text }),
+        // Preserve step images here too — the previous code was flattening to i.text
+        instructions: instructions.map((i) => ({ text: i.text, images: i.images || [] })),
         notes: recipe.notes || [],
         image_url,
       }, token);
@@ -87,7 +97,7 @@ export default function HomeView({ onSaved }) {
       setFile(null);
       setImageToSave(null);
       onSaved();
-    } catch (e) { 
+    } catch (e) {
       console.error("Save failed:", e);
       alert("Save failed: " + e.message);
     }
@@ -106,8 +116,12 @@ export default function HomeView({ onSaved }) {
         const image_url = manualImageToSave || null;
         addGuestRecipe({
           title: manualTitle,
-          ingredients: manualIngredients.map((i) => i.text).filter(Boolean),
-          instructions: manualInstructions.map((i) => ({ text: i.text, images: i.images || [] })).filter((i) => i.text),
+          ingredients: manualIngredients
+            .filter((i) => i.text.trim())
+            .map((i) => i.structured || { amount: null, unit: null, name: i.text }),
+          instructions: manualInstructions
+            .filter((i) => i.text.trim())
+            .map((i) => ({ text: i.text, images: i.images || [] })),
           notes: [],
           image_url,
         });
@@ -126,8 +140,12 @@ export default function HomeView({ onSaved }) {
       }
       await saveRecipe({
         title: manualTitle,
-        ingredients: manualIngredients.map((i) => i.text).filter(Boolean),
-        instructions: manualInstructions.map((i) => i.text).filter(Boolean),
+        ingredients: manualIngredients
+          .filter((i) => i.text.trim())
+          .map((i) => i.structured || { amount: null, unit: null, name: i.text }),
+        instructions: manualInstructions
+          .filter((i) => i.text.trim())
+          .map((i) => ({ text: i.text, images: i.images || [] })),
         notes: [],
         image_url,
       }, token);
