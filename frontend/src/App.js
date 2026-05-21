@@ -49,16 +49,28 @@ export default function App() {
             <span className="loading-dot" />
             <span className="loading-dot" />
           </div>
-          {wakingUp && (
-            <div style={{ marginTop: "24px", maxWidth: "280px", margin: "24px auto 0", textAlign: "center" }}>
-              <p style={{ fontSize: "14px", color: "#555", lineHeight: "1.6", marginBottom: "8px" }}>
-                The server is waking up after a period of inactivity.
-              </p>
-              <p style={{ fontSize: "13px", color: "#aaa", lineHeight: "1.6" }}>
-                This usually takes under a minute — thank you for your patience.
-              </p>
-            </div>
-          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (wakingUp) {
+    return (
+      <div className="app">
+        <div className="loading-state" style={{ paddingTop: "80px" }}>
+          <div>
+            <span className="loading-dot" />
+            <span className="loading-dot" />
+            <span className="loading-dot" />
+          </div>
+          <div style={{ marginTop: "24px", maxWidth: "280px", margin: "24px auto 0", textAlign: "center" }}>
+            <p style={{ fontSize: "14px", color: "#555", lineHeight: "1.6", marginBottom: "8px" }}>
+              The server is waking up after a period of inactivity.
+            </p>
+            <p style={{ fontSize: "13px", color: "#aaa", lineHeight: "1.6" }}>
+              This usually takes under a minute — thank you for your patience.
+            </p>
+          </div>
         </div>
       </div>
     );
