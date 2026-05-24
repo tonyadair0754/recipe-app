@@ -658,3 +658,223 @@ textarea:focus { border-color: #2d6a4f; }
   font-weight: 500;
   vertical-align: middle;
 }
+
+/* ── Section headers in ingredient / instruction lists ── */
+.section-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+  width: 100%;
+}
+
+.section-header-input {
+  flex: 1;
+  padding: 5px 10px;
+  border: none;
+  border-bottom: 1.5px solid #2d6a4f;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #2d6a4f;
+  background: transparent;
+  font-family: Arial, sans-serif;
+  outline: none;
+}
+
+.section-header-input::placeholder { color: #93c4b0; }
+
+/* Read-only section label shown in DetailView */
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2d6a4f;
+  padding: 18px 0 6px;
+  border-bottom: 1px solid #b7e4c7;
+  margin-bottom: 4px;
+}
+
+/* ── Linked ingredient chip (view mode) ── */
+.linked-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f4fbf6;
+  border: 1px solid #b7e4c7;
+  border-radius: 999px;
+  padding: 1px 10px 1px 8px;
+  font-size: 13px;
+  color: #2d6a4f;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  vertical-align: middle;
+}
+
+.linked-chip:hover { background: #e0f5e9; }
+
+.linked-chip-icon {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* ── Link picker dropdown (edit mode) ── */
+.link-btn {
+  background: none;
+  border: 1px solid #d0d0ca;
+  border-radius: 5px;
+  color: #bbb;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 6px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  font-family: Arial, sans-serif;
+  white-space: nowrap;
+}
+
+.link-btn:hover { border-color: #2d6a4f; color: #2d6a4f; }
+
+/* Linked state — visibly green so it's obvious a link is active */
+.link-btn.linked {
+  border-color: #2d6a4f;
+  background: #f4fbf6;
+  color: #2d6a4f;
+}
+
+/* Truncate long recipe names in the confirmation label */
+.link-confirm {
+  font-size: 11px;
+  color: #2d6a4f;
+  margin-top: 2px;
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-picker {
+  position: absolute;
+  z-index: 200;
+  background: #fff;
+  border: 1px solid #b7e4c7;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+  min-width: 220px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.link-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 9px 16px;
+  font-size: 13px;
+  color: #1a1a1a;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  transition: background-color 0.1s;
+}
+
+.link-picker-item:hover { background: #f4fbf6; }
+.link-picker-item.active { color: #2d6a4f; font-weight: 500; }
+
+.link-picker-unlink {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid #e8e8e2;
+  padding: 9px 16px;
+  font-size: 12px;
+  color: #c0392b;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  margin-top: 4px;
+  transition: background-color 0.1s;
+}
+
+.link-picker-unlink:hover { background: #fdf0ef; }
+
+/* ── Sub-recipe side panel ── */
+.sub-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 300;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sub-panel {
+  background: #fff;
+  width: min(420px, 92vw);
+  height: 100%;
+  overflow-y: auto;
+  padding: 28px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  animation: slideInPanel 0.22s ease;
+}
+
+@keyframes slideInPanel {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+.sub-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.sub-panel-title {
+  font-size: 17px;
+  font-weight: 500;
+  color: #1a1a1a;
+  letter-spacing: -0.2px;
+  flex: 1;
+  padding-right: 12px;
+}
+
+.sub-panel-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: #aaa;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+  transition: color 0.15s;
+}
+
+.sub-panel-close:hover { color: #1a1a1a; }
+
+.sub-panel-open-btn {
+  padding-bottom: 20px;
+}
+
+.sub-panel .section-heading { margin-top: 16px; }
+
+.sub-panel .detail-list li {
+  font-size: 13px;
+  padding: 7px 10px;
+}
+
+/* ── Mobile: stack entry cards vertically ── */
+@media (max-width: 600px) {
+  .entry-cards {
+    grid-template-columns: 1fr;
+  }
+}

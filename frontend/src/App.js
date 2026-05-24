@@ -108,7 +108,7 @@ export default function App() {
         </div>
       </div>
 
-      {view === "home" && <HomeView onSaved={handleSaved} />}
+      {view === "home" && <HomeView onSaved={handleSaved} allRecipes={displayedRecipes} />}
       {view === "collection" && (
         <CollectionView
           saved={displayedRecipes}
@@ -123,6 +123,7 @@ export default function App() {
           onUpdated={handleUpdated}
           onSaved={isGuest ? () => {} : loadRecipes}
           onNavigate={handleNavigate}
+          allRecipes={displayedRecipes}
         />
       )}
     </div>

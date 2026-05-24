@@ -17,7 +17,7 @@ const toItems = (arr) =>
     structured: item.amount !== undefined ? item : undefined,
   }));
 
-export default function HomeView({ onSaved }) {
+export default function HomeView({ onSaved, allRecipes }) {
   const { token, isGuest, addGuestRecipe } = useAuth();
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
@@ -68,9 +68,13 @@ export default function HomeView({ onSaved }) {
           title: editedTitle,
           // Use structured object if present, otherwise fall back to plain string —
           // same pattern as DetailView so storage is always consistent
-          ingredients: ingredients.map((i) => i.structured || { amount: null, unit: null, name: i.text }),
+          ingredients: ingredients.map((i) =>
+            i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
+          ),
           // Preserve step images — don't flatten to i.text
-          instructions: instructions.map((i) => ({ text: i.text, images: i.images || [] })),
+          instructions: instructions.map((i) =>
+            i.type === "section" ? i : { text: i.text, images: i.images || [] }
+          ),
           notes: recipe.notes || [],
           image_url,
         });
@@ -87,9 +91,13 @@ export default function HomeView({ onSaved }) {
       }
       await saveRecipe({
         title: editedTitle,
-        ingredients: ingredients.map((i) => i.structured || { amount: null, unit: null, name: i.text }),
+        ingredients: ingredients.map((i) =>
+          i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
+        ),
         // Preserve step images here too — the previous code was flattening to i.text
-        instructions: instructions.map((i) => ({ text: i.text, images: i.images || [] })),
+        instructions: instructions.map((i) =>
+          i.type === "section" ? i : { text: i.text, images: i.images || [] }
+        ),
         notes: recipe.notes || [],
         image_url,
       }, token);
@@ -117,11 +125,11 @@ export default function HomeView({ onSaved }) {
         addGuestRecipe({
           title: manualTitle,
           ingredients: manualIngredients
-            .filter((i) => i.text.trim())
-            .map((i) => i.structured || { amount: null, unit: null, name: i.text }),
+            .filter((i) => i.type === "section" || i.text.trim())
+            .map((i) => i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })),
           instructions: manualInstructions
-            .filter((i) => i.text.trim())
-            .map((i) => ({ text: i.text, images: i.images || [] })),
+            .filter((i) => i.type === "section" || i.text.trim())
+            .map((i) => i.type === "section" ? i : { text: i.text, images: i.images || [] }),
           notes: [],
           image_url,
         });
@@ -141,11 +149,11 @@ export default function HomeView({ onSaved }) {
       await saveRecipe({
         title: manualTitle,
         ingredients: manualIngredients
-          .filter((i) => i.text.trim())
-          .map((i) => i.structured || { amount: null, unit: null, name: i.text }),
+          .filter((i) => i.type === "section" || i.text.trim())
+          .map((i) => i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })),
         instructions: manualInstructions
-          .filter((i) => i.text.trim())
-          .map((i) => ({ text: i.text, images: i.images || [] })),
+          .filter((i) => i.type === "section" || i.text.trim())
+          .map((i) => i.type === "section" ? i : { text: i.text, images: i.images || [] }),
         notes: [],
         image_url,
       }, token);
@@ -176,6 +184,7 @@ export default function HomeView({ onSaved }) {
           onCancel={() => { setManualActive(false); setManualTitle(""); }}
           saveLabel="Save to collection"
           onImageChange={setManualImageToSave}
+          allRecipes={allRecipes}
         />
       </div>
     );
@@ -272,6 +281,7 @@ export default function HomeView({ onSaved }) {
             saveLabel="Save to collection"
             imageFile={file}
             onImageChange={setImageToSave}
+            allRecipes={allRecipes}
           />
         </div>
       )}

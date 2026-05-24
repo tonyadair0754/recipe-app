@@ -18,6 +18,7 @@ export default function RecipeEditor({
   onImageChange,
   onRemoveExisting,
   hidePhotoHeading,
+  allRecipes,
 }) {
   const { token, isGuest } = useAuth();
   const [preview, setPreview] = useState(null);
@@ -27,6 +28,10 @@ export default function RecipeEditor({
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [base64Cache, setBase64Cache] = useState(null);
   const [isParsing, setIsParsing] = useState(false);
+  // Index of the ingredient row whose link picker is currently open, or null
+  const [openPickerIndex, setOpenPickerIndex] = useState(null);
+  // Search string inside the link picker dropdown
+  const [pickerSearch, setPickerSearch] = useState("");
 
   // When a scanned image is passed in, show it as the preview automatically
   useEffect(() => {
@@ -42,6 +47,14 @@ export default function RecipeEditor({
       setSaveImage(false); // unchecked by default — user must confirm
     }
   }, [imageFile, isGuest]);
+
+  // Close the link picker if the user clicks anywhere outside it
+  useEffect(() => {
+    if (openPickerIndex === null) return;
+    const handler = () => setOpenPickerIndex(null);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openPickerIndex]);
 
   const handleImagePick = async (e) => {
     const f = e.target.files[0];
@@ -117,9 +130,37 @@ export default function RecipeEditor({
     setInstructions(updated);
   };
 
+  // Link a recipe to the ingredient at the given index.
+  // We store the link in item.structured.linkedRecipeId so it round-trips
+  // through the save path without any schema changes.
+  const handleLinkRecipe = (ingredientIndex, recipeId) => {
+    const updated = [...ingredients];
+    const item = updated[ingredientIndex];
+    const existing = item.structured || { amount: null, unit: null, name: item.text };
+    updated[ingredientIndex] = {
+      ...item,
+      structured: { ...existing, linkedRecipeId: recipeId },
+    };
+    setIngredients(updated);
+    setOpenPickerIndex(null);
+    setPickerSearch(""); // clear search so it's fresh next time the picker opens
+  };
+
+  const handleUnlinkRecipe = (ingredientIndex) => {
+    const updated = [...ingredients];
+    const item = updated[ingredientIndex];
+    if (!item.structured) return;
+    // Remove the link but keep the rest of the structured data intact
+    const { linkedRecipeId, ...rest } = item.structured;
+    updated[ingredientIndex] = { ...item, structured: rest };
+    setIngredients(updated);
+    setOpenPickerIndex(null);
+    setPickerSearch("");
+  };
+
   const handleSaveClick = async () => {
     // If there are no ingredients (or all are blank), skip parsing and save directly
-    const nonEmpty = ingredients.filter((i) => i.text.trim());
+    const nonEmpty = ingredients.filter((i) => i.text.trim() || i.type === "section");
     if (nonEmpty.length === 0) {
       onSave();
       return;
@@ -131,11 +172,34 @@ export default function RecipeEditor({
       const needsGemini = [];
 
       for (let i = 0; i < ingredients.length; i++) {
+        // Section headers aren't ingredients — pass them through unchanged
+        if (ingredients[i].type === "section") {
+          results.push({ index: i, parsed: null, isSection: true });
+          continue;
+        }
+
         const raw = ingredients[i].text.trim();
         if (!raw) continue;
 
         if (typeof ingredients[i].structured === "object" && ingredients[i].structured !== null) {
-          results.push({ index: i, parsed: ingredients[i].structured });
+          const existing = ingredients[i].structured;
+          const formattedFromStructured = formatIngredient(existing);
+          const userChangedName = raw !== formattedFromStructured;
+          if (userChangedName) {
+            // Re-parse the new text so amount/unit are correct too,
+            // but preserve linkedRecipeId if there was one
+            const reparsed = tryParseIngredient(raw);
+            const linkedRecipeId = existing.linkedRecipeId;
+            if (reparsed) {
+              results.push({ index: i, parsed: linkedRecipeId ? { ...reparsed, linkedRecipeId } : reparsed });
+            } else {
+              // Can't parse client-side — send to Gemini, then re-attach link
+              results.push({ index: i, parsed: null, linkedRecipeId });
+              needsGemini.push({ resultIndex: results.length - 1, text: raw });
+            }
+          } else {
+            results.push({ index: i, parsed: existing });
+          }
           continue;
         }
 
@@ -150,18 +214,26 @@ export default function RecipeEditor({
 
       if (needsGemini.length > 0) {
         const geminiResult = await parseIngredients(needsGemini.map((g) => g.text));
-        needsGemini.forEach(({ resultIndex }, geminiIndex) => {
-          results[resultIndex].parsed = geminiResult.ingredients[geminiIndex];
+        needsGemini.forEach(({ resultIndex, linkedRecipeId }, geminiIndex) => {
+          const parsed = geminiResult.ingredients[geminiIndex];
+          // Re-attach the link if this ingredient had one before being re-parsed
+          results[resultIndex].parsed = linkedRecipeId ? { ...parsed, linkedRecipeId } : parsed;
         });
       }
 
       // Update ingredients with structured objects and call onSave directly —
-      // no confirmation step needed since formatting handles display correctly
-      const updatedItems = results.map((r) => ({
-        id: ingredients[r.index]?.id || `ing-${Date.now()}-${r.index}`,
-        text: formatIngredient(r.parsed),
-        structured: r.parsed,
-      }));
+      // no confirmation step needed since formatting handles display correctly.
+      // Section rows are passed through as-is (isSection flag).
+      const updatedItems = results.map((r) => {
+        if (r.isSection) {
+          return ingredients[r.index]; // keep section unchanged
+        }
+        return {
+          id: ingredients[r.index]?.id || `ing-${Date.now()}-${r.index}`,
+          text: formatIngredient(r.parsed),
+          structured: r.parsed,
+        };
+      });
 
       setIngredients(updatedItems);
       onSave();
@@ -204,6 +276,80 @@ export default function RecipeEditor({
       </label>
     </div>
   );
+
+  // This is the renderActions function passed to EditableList for ingredients.
+  // It renders a small link button next to each ingredient row that opens a
+  // recipe picker — so you can link e.g. "sponge cake" to another recipe.
+  const renderIngredientLink = (item, i) => {
+    const linkedId = item.structured?.linkedRecipeId;
+    const isOpen = openPickerIndex === i;
+    // Filter the recipe list by the search string typed in the picker
+    const pickableRecipes = (allRecipes || []).filter((r) =>
+      !pickerSearch || r.title.toLowerCase().includes(pickerSearch.toLowerCase())
+    );
+    // Look up the name of the currently linked recipe for the confirmation label
+    const linkedRecipeName = linkedId
+      ? (allRecipes || []).find((r) => r.id === linkedId)?.title
+      : null;
+
+    return (
+      <div style={{ position: "relative", flexShrink: 0 }} onMouseDown={(e) => e.stopPropagation()}>
+        <button
+          className={`link-btn ${linkedId ? "linked" : ""}`}
+          title={linkedId ? "Linked — click to change" : "Link to another recipe"}
+          onClick={() => {
+            setOpenPickerIndex(isOpen ? null : i);
+            if (!isOpen) setPickerSearch(""); // reset search when opening
+          }}
+        >
+          🔗
+        </button>
+
+        {/* Confirmation label shown beneath the ingredient when a link is active */}
+        {linkedRecipeName && (
+          <div className="link-confirm" title={linkedRecipeName}>
+            → {linkedRecipeName}
+          </div>
+        )}
+
+        {isOpen && (
+          <div className="link-picker" onMouseDown={(e) => e.stopPropagation()}>
+            {/* Search bar to filter recipes — useful once the collection grows */}
+            <div style={{ padding: "8px 10px 4px" }}>
+              <input
+                className="text-input"
+                placeholder="Search recipes…"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                autoFocus
+                style={{ fontSize: "12px", padding: "6px 10px" }}
+              />
+            </div>
+            {pickableRecipes.length === 0 ? (
+              <p style={{ padding: "10px 16px", fontSize: "13px", color: "#aaa" }}>
+                {pickerSearch ? "No matches." : "No other recipes saved yet."}
+              </p>
+            ) : (
+              pickableRecipes.map((r) => (
+                <button
+                  key={r.id}
+                  className={`link-picker-item ${linkedId === r.id ? "active" : ""}`}
+                  onClick={() => handleLinkRecipe(i, r.id)}
+                >
+                  {r.title}
+                </button>
+              ))
+            )}
+            {linkedId && (
+              <button className="link-picker-unlink" onClick={() => handleUnlinkRecipe(i)}>
+                Remove link
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="recipe-editor">
@@ -251,10 +397,25 @@ export default function RecipeEditor({
         setItems={setIngredients}
         ordered={false}
         idPrefix="ing"
+        renderActions={renderIngredientLink}
       />
-      <button className="btn-add" onClick={() => setIngredients([...ingredients, { id: `ing-${Date.now()}`, text: "" }])}>
-        + Add ingredient
-      </button>
+      {/* Two add buttons: one for a regular ingredient, one for a section divider */}
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button
+          className="btn-add"
+          style={{ flex: 1 }}
+          onClick={() => setIngredients([...ingredients, { id: `ing-${Date.now()}`, text: "" }])}
+        >
+          + Add ingredient
+        </button>
+        <button
+          className="btn-add"
+          style={{ flex: 1 }}
+          onClick={() => setIngredients([...ingredients, { id: `sec-${Date.now()}`, type: "section", text: "" }])}
+        >
+          + Add section
+        </button>
+      </div>
 
       <p className="section-heading">Instructions</p>
       <EditableList
@@ -262,11 +423,25 @@ export default function RecipeEditor({
         setItems={setInstructions}
         ordered={true}
         idPrefix="ins"
-        renderExtra={renderStepImages} /* ← only instructions get this */
+        renderExtra={renderStepImages} /* ← only instructions get step images */
       />
-      <button className="btn-add" onClick={() => setInstructions([...instructions, { id: `ins-${Date.now()}`, text: "", images: [] }])}>
-        + Add step
-      </button>
+      {/* Same two-button pattern for instructions */}
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button
+          className="btn-add"
+          style={{ flex: 1 }}
+          onClick={() => setInstructions([...instructions, { id: `ins-${Date.now()}`, text: "", images: [] }])}
+        >
+          + Add step
+        </button>
+        <button
+          className="btn-add"
+          style={{ flex: 1 }}
+          onClick={() => setInstructions([...instructions, { id: `sec-${Date.now()}`, type: "section", text: "" }])}
+        >
+          + Add section
+        </button>
+      </div>
 
       <div className="editor-actions">
         {/* handleSaveClick parses ingredients silently before saving */}

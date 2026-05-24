@@ -8,21 +8,27 @@ import { formatIngredient } from "../utils/parseUtils";
 const BASE = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 
 const toItems = (arr) =>
-  (arr || []).map((item, i) => ({
-    id: `item-${Date.now()}-${i}`,
-    // Ingredients are now structured objects { amount, unit, name } —
-    // format them back to a readable string for the editor's text field.
-    // Instructions are objects with a text field.
-    // Old recipes are plain strings. Handle all three.
-    text: typeof item === "string"
-      ? item
-      : item.text !== undefined
-        ? item.text
-        : formatIngredient(item),
-    images: typeof item === "string" ? [] : (item.images || []),
-    // Preserve the structured object so RecipeEditor can skip re-parsing it
-    structured: item.amount !== undefined ? item : undefined,
-  }));
+  (arr || []).map((item, i) => {
+    // Section headers pass through with their type intact
+    if (item.type === "section") {
+      return { ...item, id: item.id || `sec-${Date.now()}-${i}` };
+    }
+    return {
+      id: `item-${Date.now()}-${i}`,
+      // Ingredients are now structured objects { amount, unit, name } —
+      // format them back to a readable string for the editor's text field.
+      // Instructions are objects with a text field.
+      // Old recipes are plain strings. Handle all three.
+      text: typeof item === "string"
+        ? item
+        : item.text !== undefined
+          ? item.text
+          : formatIngredient(item),
+      images: typeof item === "string" ? [] : (item.images || []),
+      // Preserve the structured object so RecipeEditor can skip re-parsing it
+      structured: item.amount !== undefined ? item : undefined,
+    };
+  });
 
 async function translateTextForGuest(recipe) {
   // Normalize instructions to plain strings for the API
@@ -42,7 +48,7 @@ async function translateTextForGuest(recipe) {
   return res.json();
 }
 
-export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate }) {
+export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate, allRecipes }) {
   const { token, isGuest, updateGuestRecipe, deleteGuestRecipe, addGuestRecipe } = useAuth();
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -63,6 +69,8 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const [scaledIngredients, setScaledIngredients] = useState(null);
   const [scaling, setScaling] = useState(false);
 
+  // The linked sub-recipe currently shown in the side panel, or null if closed
+  const [subRecipe, setSubRecipe] = useState(null);
 
   const isKorean = recipe.language === "ko";
   const displayed = showingTranslation && translated ? translated : recipe;
@@ -84,11 +92,14 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         const updated = {
           title: editTitle,
           // Use the structured object if present, otherwise fall back to
-          // { amount: null, unit: null, name: text } so storage is always consistent
+          // { amount: null, unit: null, name: text } so storage is always consistent.
+          // Section headers pass through as-is (type: "section").
           ingredients: editIngredients.map((i) =>
-            i.structured || { amount: null, unit: null, name: i.text }
+            i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
           ),
-          instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
+          instructions: editInstructions.map((i) =>
+            i.type === "section" ? i : { text: i.text, images: i.images || [] }
+          ),
           image_url,
         };
         updateGuestRecipe(recipe.id, updated);
@@ -105,12 +116,14 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       }
       // Same structured serialization for auth users
       const ingredients = editIngredients.map((i) =>
-        i.structured || { amount: null, unit: null, name: i.text }
+        i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
       );
       await updateRecipe(recipe.id, {
         title: editTitle,
         ingredients,
-        instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
+        instructions: editInstructions.map((i) =>
+          i.type === "section" ? i : { text: i.text, images: i.images || [] }
+        ),
         notes: recipe.notes || [],
         language: recipe.language,
         image_url,
@@ -119,7 +132,9 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         ...recipe,
         title: editTitle,
         ingredients,
-        instructions: editInstructions.map((i) => ({ text: i.text, images: i.images || [] })),
+        instructions: editInstructions.map((i) =>
+          i.type === "section" ? i : { text: i.text, images: i.images || [] }
+        ),
         image_url,
       });
       setEditing(false);
@@ -165,11 +180,12 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       const ratio = targetServings / originalServings;
 
       // Normalize ingredients to plain strings for scaling.
+      // Skip section headers — they have no quantity to scale.
       // Korean ingredients are already plain strings; English ones may be
       // structured objects that need formatting first.
-      const ingredientStrings = displayed.ingredients.map((item) =>
-        typeof item === "string" ? item : formatIngredient(item)
-      );
+      const ingredientStrings = displayed.ingredients
+        .filter((item) => !item.type)
+        .map((item) => typeof item === "string" ? item : formatIngredient(item));
 
       // First pass: try client-side math for everything
       const { scaled, needsGemini } = tryScaleAll(ingredientStrings, ratio);
@@ -248,8 +264,15 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     }
   };
 
+  // Find the full recipe object for a given linked ID so we can show it in the panel
+  const findLinkedRecipe = (id) => (allRecipes || []).find((r) => r.id === id) || null;
+
   const ingredientsLabel = isKorean ? "재료" : showingTranslation ? "재료" : "Ingredients";
   const instructionsLabel = isKorean ? "조리법" : showingTranslation ? "조리법" : "Instructions";
+
+  // Tracks which non-section ingredient index we're on when building the scaled list
+  // (sections have no entry in scaledIngredients, so we need a separate counter)
+  let scaledIndex = 0;
 
   return (
     <>
@@ -357,24 +380,65 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
                   </button>
                 )}
               </div>
+
               <p className="section-heading">{ingredientsLabel}</p>
               <ul className="detail-list">
-                {(scaledIngredients || displayed.ingredients).map((item, i) => (
-                  <li key={i}>
-                    {/* Format structured ingredients as readable strings.
-                        Scaled ingredients are already plain strings from tryScaleAll/Gemini.
-                        Old recipes are plain strings too — typeof check handles both. */}
-                    {typeof item === "string" ? item : formatIngredient(item)}
-                    {scaledIngredients && i === 0 && (
-                      <span className="scaler-badge">×{(targetServings / originalServings).toFixed(2).replace(/\.?0+$/, "")}</span>
-                    )}
-                  </li>
-                ))}
+                {displayed.ingredients.map((item, i) => {
+                  // Section headers render as a label, not a list item
+                  if (item.type === "section") {
+                    return (
+                      <p key={i} className="section-label">{item.text || "—"}</p>
+                    );
+                  }
+
+                  // For scaled view, pull from scaledIngredients using a
+                  // separate counter that skips section rows
+                  const displayText = scaledIngredients
+                    ? scaledIngredients[scaledIndex]
+                    : (typeof item === "string" ? item : formatIngredient(item));
+
+                  // Does this ingredient link to another recipe?
+                  const linkedId = item.linkedRecipeId ?? item.structured?.linkedRecipeId;
+
+                  const currentScaledIndex = scaledIndex;
+                  if (!item.type) scaledIndex++;
+
+                  return (
+                    <li key={i}>
+                      {linkedId ? (
+                        // Clickable chip that opens the side panel
+                        <>
+                          <button
+                            className="linked-chip"
+                            onClick={() => setSubRecipe(findLinkedRecipe(linkedId))}
+                            title="View linked recipe"
+                          >
+                            <span className="linked-chip-icon">📖</span>
+                            {displayText}
+                          </button>
+                        </>
+                      ) : (
+                        /* Format structured ingredients as readable strings.
+                           Scaled ingredients are already plain strings from tryScaleAll/Gemini.
+                           Old recipes are plain strings too — typeof check handles both. */
+                        displayText
+                      )}
+                      {scaledIngredients && currentScaledIndex === 0 && (
+                        <span className="scaler-badge">×{(targetServings / originalServings).toFixed(2).replace(/\.?0+$/, "")}</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
 
               <p className="section-heading">{instructionsLabel}</p>
               <ol className="detail-list" style={{ listStyle: "none" }}>
                 {displayed.instructions.map((step, i) => {
+                  // Section headers in instructions
+                  if (step.type === "section") {
+                    return <p key={i} className="section-label">{step.text || "—"}</p>;
+                  }
+
                   const text = typeof step === "string" ? step : step.text;
                   const images = typeof step === "string" ? [] : (step.images || []);
                   return (
@@ -434,10 +498,12 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             onImageChange={setEditImageFile}
             onRemoveExisting={() => setRemoveExistingImage(true)}
             hidePhotoHeading={!!recipe.image_url && !removeExistingImage}
+            allRecipes={allRecipes} /* ← pass through for the link picker */
           />
         </>
       )}
-    {/* Lightbox — clicking any image opens it here at full size */}
+
+      {/* Lightbox — clicking any image opens it here at full size */}
       {lightboxUrl && (
         <div
           onClick={() => setLightboxUrl(null)}
@@ -452,6 +518,55 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             alt="Full size"
             style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: "8px", objectFit: "contain" }}
           />
+        </div>
+      )}
+
+      {/* Sub-recipe side panel — slides in from the right when a linked ingredient is clicked */}
+      {subRecipe && (
+        <div className="sub-panel-overlay" onClick={() => setSubRecipe(null)}>
+          <div className="sub-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="sub-panel-header">
+              <p className="sub-panel-title">{subRecipe.title}</p>
+              <button className="sub-panel-close" onClick={() => setSubRecipe(null)}>×</button>
+            </div>
+
+            {/* Open full recipe button — navigates to that recipe's DetailView */}
+            <div className="sub-panel-open-btn">
+              <button
+                className="btn-primary"
+                style={{ width: "100%" }}
+                onClick={() => { setSubRecipe(null); onNavigate(subRecipe); }}
+              >
+                Open full recipe →
+              </button>
+            </div>
+
+            <p className="section-heading">Ingredients</p>
+            <ul className="detail-list">
+              {subRecipe.ingredients.map((item, i) => {
+                if (item.type === "section") return <p key={i} className="section-label">{item.text}</p>;
+                return (
+                  <li key={i}>
+                    {typeof item === "string" ? item : formatIngredient(item)}
+                  </li>
+                );
+              })}
+            </ul>
+
+            <p className="section-heading">Instructions</p>
+            <ol className="detail-list" style={{ listStyle: "none" }}>
+              {subRecipe.instructions.map((step, i) => {
+                if (step.type === "section") return <p key={i} className="section-label">{step.text}</p>;
+                const text = typeof step === "string" ? step : step.text;
+                return (
+                  <li key={i}>
+                    <span className="step-num">{i + 1}</span>{text}
+                  </li>
+                );
+              })}
+            </ol>
+
+          </div>
         </div>
       )}
     </>

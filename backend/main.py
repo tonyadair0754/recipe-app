@@ -123,22 +123,33 @@ async def upload(
         Look at this recipe image and extract the information into JSON.
         Return only valid JSON with exactly these keys:
         - title (string)
-        - ingredients (list of objects with keys: amount (number or null), unit (string or null), name (string))
-        - instructions (list of strings)
+        - ingredients (list — see format below)
+        - instructions (list — see format below)
         - notes (list of strings, can be empty)
 
-        For ingredients, parse each one into its components:
-        - amount: the numeric quantity (e.g. 2, 0.5, 1.5), or null if there is none
-        - unit: the unit of measurement normalized to singular lowercase (e.g. "cup", "tsp", "g"), or null if there is none
-        - name: the ingredient name (e.g. "flour", "eggs", "salt to taste")
+        INGREDIENTS FORMAT:
+        Each ingredient is either a plain ingredient object OR a section header.
+        - Regular ingredient: {"amount": number or null, "unit": string or null, "name": string}
+        - Section header (use when the recipe has labeled groups like "For the dough", "For the filling"):
+        {"type": "section", "text": "Section name"}
 
         Examples:
         "2 cups flour" → {"amount": 2, "unit": "cup", "name": "flour"}
         "1/2 tsp salt" → {"amount": 0.5, "unit": "tsp", "name": "salt"}
         "2 eggs"       → {"amount": 2, "unit": null, "name": "eggs"}
         "salt to taste" → {"amount": null, "unit": null, "name": "salt to taste"}
+        Section label  → {"type": "section", "text": "For the brownie base"}
 
-        Each instruction should be a complete step without any leading numbers.
+        INSTRUCTIONS FORMAT:
+        Each instruction is either a plain step string OR a section header object.
+        - Regular step: "Mix the flour and butter until crumbly."
+        - Section header: {"type": "section", "text": "Section name"}
+
+        Use section headers in instructions only if the recipe clearly separates phases
+        (e.g. "Make the sponge", "Assemble the cake").
+
+        Each instruction step should be a complete sentence without any leading numbers.
+        If there are no sections, use plain strings for all ingredients and instructions.
         If you cannot find a value, use an empty list.
         Return nothing except the JSON object.
         """
