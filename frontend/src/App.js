@@ -126,6 +126,18 @@ export default function App() {
           allRecipes={displayedRecipes}
         />
       )}
+
+      {/* Footer — outside all views so it appears on every page */}
+      <footer className="app-footer">
+        Made by Tony Adair.{" "}
+        <a
+          href="https://tonyadair0754.github.io#projects"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Check out my other projects!
+        </a>
+      </footer>
     </div>
   );
 }
