@@ -3,7 +3,7 @@ import EditableList from "./EditableList";
 import { uploadRecipeImage_toStorage, parseIngredients } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { imageToBase64 } from "../utils/imageUtils";
-import { tryParseIngredient, formatIngredient } from "../utils/parseUtils";
+import { tryParseIngredient, formatIngredient, normalizeSearch } from "../utils/parseUtils";
 
 export default function RecipeEditor({
   ingredients,
@@ -19,6 +19,7 @@ export default function RecipeEditor({
   onRemoveExisting,
   hidePhotoHeading,
   allRecipes,
+  language,
 }) {
   const { token, isGuest } = useAuth();
   const [preview, setPreview] = useState(null);
@@ -159,10 +160,17 @@ export default function RecipeEditor({
   };
 
   const handleSaveClick = async () => {
-    // If there are no ingredients (or all are blank), skip parsing and save directly
+    // Korean ingredients are plain strings — the English regex parser can't handle them,
+    // and they don't need structuring. Skip parsing entirely and save as-is.
+    if (language === "ko") {
+      onSave(null, null); // null signals "use state as-is"
+      return;
+    }
+
+    // If there are no non-blank, non-section ingredients, skip parsing and save directly
     const nonEmpty = ingredients.filter((i) => i.text.trim() || i.type === "section");
     if (nonEmpty.length === 0) {
-      onSave();
+      onSave([], null);
       return;
     }
 
@@ -179,21 +187,21 @@ export default function RecipeEditor({
         }
 
         const raw = ingredients[i].text.trim();
+        // Skip blank rows — they won't be included in the saved result
         if (!raw) continue;
 
         if (typeof ingredients[i].structured === "object" && ingredients[i].structured !== null) {
+          // BUG FIX: if the user edited the text of a linked ingredient, sync
+          // the name field in structured so the rename isn't silently dropped.
           const existing = ingredients[i].structured;
           const formattedFromStructured = formatIngredient(existing);
           const userChangedName = raw !== formattedFromStructured;
           if (userChangedName) {
-            // Re-parse the new text so amount/unit are correct too,
-            // but preserve linkedRecipeId if there was one
             const reparsed = tryParseIngredient(raw);
             const linkedRecipeId = existing.linkedRecipeId;
             if (reparsed) {
               results.push({ index: i, parsed: linkedRecipeId ? { ...reparsed, linkedRecipeId } : reparsed });
             } else {
-              // Can't parse client-side — send to Gemini, then re-attach link
               results.push({ index: i, parsed: null, linkedRecipeId });
               needsGemini.push({ resultIndex: results.length - 1, text: raw });
             }
@@ -216,18 +224,15 @@ export default function RecipeEditor({
         const geminiResult = await parseIngredients(needsGemini.map((g) => g.text));
         needsGemini.forEach(({ resultIndex, linkedRecipeId }, geminiIndex) => {
           const parsed = geminiResult.ingredients[geminiIndex];
-          // Re-attach the link if this ingredient had one before being re-parsed
           results[resultIndex].parsed = linkedRecipeId ? { ...parsed, linkedRecipeId } : parsed;
         });
       }
 
-      // Update ingredients with structured objects and call onSave directly —
-      // no confirmation step needed since formatting handles display correctly.
-      // Section rows are passed through as-is (isSection flag).
-      const updatedItems = results.map((r) => {
-        if (r.isSection) {
-          return ingredients[r.index]; // keep section unchanged
-        }
+      // Build the final cleaned ingredient list.
+      // Blank items were skipped above with `continue`, so they're absent here —
+      // this prevents blank boxes from being saved and reappearing as uneditable ghosts.
+      const finalIngredients = results.map((r) => {
+        if (r.isSection) return ingredients[r.index];
         return {
           id: ingredients[r.index]?.id || `ing-${Date.now()}-${r.index}`,
           text: formatIngredient(r.parsed),
@@ -235,8 +240,10 @@ export default function RecipeEditor({
         };
       });
 
-      setIngredients(updatedItems);
-      onSave();
+      // Pass the cleaned list directly to onSave so the parent doesn't need to
+      // re-read from React state (which would still hold the stale pre-save value).
+      setIngredients(finalIngredients);
+      onSave(finalIngredients, null);
     } catch (e) {
       console.error("Parsing failed:", e);
       alert("Could not parse ingredients");
@@ -245,37 +252,50 @@ export default function RecipeEditor({
     }
   };
 
-  // This is the renderExtra function passed to EditableList for instructions
-  const renderStepImages = (item, i) => (
-    <div style={{ marginTop: "8px", paddingLeft: "28px" }}>
-      {(item.images || []).map((url, imgIndex) => (
-        <div key={imgIndex} style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginRight: "8px", marginBottom: "8px" }}>
-          <img
-            src={url}
-            alt={`Step ${i + 1}`}
-            onClick={() => setLightboxUrl(url)}
-            style={{ height: "80px", width: "80px", objectFit: "cover", borderRadius: "6px", cursor: "zoom-in" }}
-          />
-          <button
-            className="btn-remove"
-            onClick={() => handleRemoveStepImage(i, imgIndex)}
-            title="Remove image"
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      <label className="btn-add" style={{ cursor: "pointer", fontSize: "12px" }}>
-        + Add image
-        <input
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={(e) => handleStepImagePick(e, i)}
-        />
-      </label>
-    </div>
+  const renderStepImageButton = (item, i) => (
+    <label
+      className="btn-add step-add-image-btn"
+      style={{ cursor: "pointer", fontSize: "12px", width: "auto", marginTop: 0, whiteSpace: "nowrap", flexShrink: 0 }}
+    >
+      + Add image
+      <input
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => handleStepImagePick(e, i)}
+      />
+    </label>
   );
+
+  const renderStepImages = (item, i) => {
+    if (!item.images || item.images.length === 0) return null;
+    return (
+      <div className="step-images-container" style={{ marginTop: "8px" }}>
+        {item.images.map((url, imgIndex) => (
+          <div
+            key={imgIndex}
+            className="step-image-row"
+            style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginRight: "8px", marginBottom: "8px" }}
+          >
+            <img
+              src={url}
+              alt={`Step ${i + 1}`}
+              className="step-image-thumb"
+              onClick={() => setLightboxUrl(url)}
+              style={{ height: "80px", width: "80px", objectFit: "cover", borderRadius: "6px", cursor: "zoom-in" }}
+            />
+            <button
+              className="btn-remove"
+              onClick={() => handleRemoveStepImage(i, imgIndex)}
+              title="Remove image"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   // This is the renderActions function passed to EditableList for ingredients.
   // It renders a small link button next to each ingredient row that opens a
@@ -285,7 +305,7 @@ export default function RecipeEditor({
     const isOpen = openPickerIndex === i;
     // Filter the recipe list by the search string typed in the picker
     const pickableRecipes = (allRecipes || []).filter((r) =>
-      !pickerSearch || r.title.toLowerCase().includes(pickerSearch.toLowerCase())
+      !pickerSearch || normalizeSearch(r.title).includes(normalizeSearch(pickerSearch))
     );
     // Look up the name of the currently linked recipe for the confirmation label
     const linkedRecipeName = linkedId
@@ -424,6 +444,7 @@ export default function RecipeEditor({
         ordered={true}
         idPrefix="ins"
         renderExtra={renderStepImages} /* ← only instructions get step images */
+        renderActions={renderStepImageButton}
       />
       {/* Same two-button pattern for instructions */}
       <div style={{ display: "flex", gap: "8px" }}>

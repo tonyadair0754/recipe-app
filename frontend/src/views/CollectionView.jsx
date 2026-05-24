@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { formatIngredient } from "../utils/parseUtils";
+import { formatIngredient, normalizeSearch } from "../utils/parseUtils";
 
 export default function CollectionView({ saved, onSelect }) {
   const { isGuest } = useAuth();
@@ -8,24 +8,23 @@ export default function CollectionView({ saved, onSelect }) {
 
   const filtered = saved.filter((r) => {
     if (!search) return true;
-    const q = search.toLowerCase();
+    const q = normalizeSearch(search);
 
     // Check title
-    if (r.title.toLowerCase().includes(q)) return true;
+    if (normalizeSearch(r.title).includes(q)) return true;
 
-    // Check ingredients (may be structured objects { amount, unit, name } or plain strings)
+    // Check ingredients — may be structured objects, plain strings, or section headers
     if (r.ingredients.some((ing) => {
-      // Section headers have type: "section" — read their text directly
-      // instead of passing them through formatIngredient (which expects amount/unit/name)
-      if (ing.type === "section") return (ing.text || "").toLowerCase().includes(q);
+      if (ing.type === "section") return normalizeSearch(ing.text || "").includes(q);
       const text = typeof ing === "string" ? ing : formatIngredient(ing);
-      return text.toLowerCase().includes(q);
+      return normalizeSearch(text).includes(q);
     })) return true;
 
-    // Check instructions (may be strings or {text, images} objects)
+    // Check instructions — may be strings, {text, images} objects, or section headers
     if (r.instructions.some((step) => {
+      if (step.type === "section") return normalizeSearch(step.text || "").includes(q);
       const text = typeof step === "string" ? step : step.text;
-      return text.toLowerCase().includes(q);
+      return normalizeSearch(text).includes(q);
     })) return true;
 
     return false;

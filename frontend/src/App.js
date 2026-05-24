@@ -40,6 +40,27 @@ export default function App() {
   const handleUpdated = (r) => { setSelected(r); if (!isGuest) loadRecipes(); };
   const handleNavigate = (r) => { setSelected(r); setView("detail"); };
 
+  // Push a history entry each time the view changes so the browser back
+  // button works within the app. Without this, all views share one URL
+  // and the back button exits the app entirely.
+  useEffect(() => {
+    // Push a new entry so the back button has somewhere to go
+    window.history.pushState({ view }, "", window.location.pathname);
+  }, [view]);
+
+  useEffect(() => {
+    const handlePopState = (e) => {
+      // When the user hits back, restore the view from the history state.
+      // If there's no state (they've gone back to the very first entry), go home.
+      const prev = e.state?.view;
+      if (prev === "collection") { setView("collection"); setSelected(null); }
+      else if (prev === "detail" && selected) setView("detail");
+      else setView("home");
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [selected]);
+
   if (loading) {
     return (
       <div className="app">

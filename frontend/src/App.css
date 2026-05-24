@@ -276,6 +276,19 @@ body {
   align-items: flex-start;
   gap: 8px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.step-images-container {
+  width: 100%;
+  padding-bottom: 8px;
+}
+
+.step-add-image-btn {
+  width: auto;
+  margin-top: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .drag-handle {
@@ -872,6 +885,16 @@ textarea:focus { border-color: #2d6a4f; }
   padding: 7px 10px;
 }
 
+/* ── Detail header: truncate long titles on desktop ── */
+.detail-header h2 {
+  /* Prevent a very long title from squishing the action buttons off screen */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 420px;
+}
+
 /* ── Footer ── */
 .app-footer {
   margin-top: 60px;
@@ -891,9 +914,62 @@ textarea:focus { border-color: #2d6a4f; }
   text-decoration: underline;
 }
 
-/* ── Mobile: stack entry cards vertically ── */
+/* ── Mobile ── */
+
 @media (max-width: 600px) {
   .entry-cards {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .detail-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .detail-header h2 {
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .detail-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 600px) {
+  .step-image-row {
+    display: flex;
+    flex-direction: row;        /* ← back to row so × stays on the right of the image */
+    align-items: flex-start;
+    width: 100%;
+    margin-bottom: 10px;
+  }
+
+  .step-image-thumb {
+    width: 100% !important;
+    height: 160px !important;
+    object-fit: cover;
+    border-radius: 6px;
+    flex: 1;                    /* ← image grows to fill, × stays beside it */
+  }
+
+  .editable-list li textarea {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .link-btn, .btn-remove {
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+
+  /* Truncate the linked recipe confirmation label sooner on mobile */
+  .link-confirm {
+    max-width: 72px;
   }
 }

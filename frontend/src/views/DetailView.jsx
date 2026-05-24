@@ -83,7 +83,12 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
     setEditing(true);
   };
 
-  const handleSaveEdits = async () => {
+  const handleSaveEdits = async (cleanedIngredients) => {
+    // Use the parsed+cleaned list passed from RecipeEditor when available.
+    // Korean recipes pass null (no parsing needed), so fall back to editIngredients.
+    const finalIngredients = cleanedIngredients !== null
+      ? cleanedIngredients
+      : editIngredients;
     try {
       if (isGuest) {
         const image_url = editImageFile
@@ -91,10 +96,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
           : removeExistingImage ? null : recipe.image_url;
         const updated = {
           title: editTitle,
-          // Use the structured object if present, otherwise fall back to
-          // { amount: null, unit: null, name: text } so storage is always consistent.
-          // Section headers pass through as-is (type: "section").
-          ingredients: editIngredients.map((i) =>
+          ingredients: finalIngredients.map((i) =>
             i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
           ),
           instructions: editInstructions.map((i) =>
@@ -104,9 +106,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         };
         updateGuestRecipe(recipe.id, updated);
         onUpdated({ ...recipe, ...updated });
-        setEditing(false);
-        setEditImageFile(null);
-        setRemoveExistingImage(false);
+        setEditing(false); setEditImageFile(null); setRemoveExistingImage(false);
         return;
       }
       let image_url = removeExistingImage ? null : recipe.image_url;
@@ -114,8 +114,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         const result = await uploadRecipeImage_toStorage(editImageFile, token);
         image_url = result.image_url;
       }
-      // Same structured serialization for auth users
-      const ingredients = editIngredients.map((i) =>
+      const ingredients = finalIngredients.map((i) =>
         i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
       );
       await updateRecipe(recipe.id, {
@@ -137,11 +136,8 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         ),
         image_url,
       });
-      setEditing(false);
-      setEditImageFile(null);
-      setTranslated(null);
-      setShowingTranslation(false);
-      setRemoveExistingImage(false);
+      setEditing(false); setEditImageFile(null);
+      setTranslated(null); setShowingTranslation(false); setRemoveExistingImage(false);
     } catch (e) { alert("Update failed"); }
   };
 

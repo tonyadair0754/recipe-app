@@ -60,18 +60,21 @@ export default function HomeView({ onSaved, allRecipes }) {
     }
   };
 
-  const handleSaveUploaded = async () => {
+  // cleanedIngredients is passed directly from RecipeEditor's handleSaveClick,
+  // bypassing the stale closure problem — we use it instead of reading from state.
+  const handleSaveUploaded = async (cleanedIngredients) => {
+    // Korean recipes pass null (no parsing needed), fall back to current state
+    const finalIngredients = cleanedIngredients !== null
+      ? cleanedIngredients
+      : ingredients;
     try {
       if (isGuest) {
         const image_url = imageToSave || null;
         addGuestRecipe({
           title: editedTitle,
-          // Use structured object if present, otherwise fall back to plain string —
-          // same pattern as DetailView so storage is always consistent
-          ingredients: ingredients.map((i) =>
+          ingredients: finalIngredients.map((i) =>
             i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
           ),
-          // Preserve step images — don't flatten to i.text
           instructions: instructions.map((i) =>
             i.type === "section" ? i : { text: i.text, images: i.images || [] }
           ),
@@ -91,10 +94,9 @@ export default function HomeView({ onSaved, allRecipes }) {
       }
       await saveRecipe({
         title: editedTitle,
-        ingredients: ingredients.map((i) =>
+        ingredients: finalIngredients.map((i) =>
           i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
         ),
-        // Preserve step images here too — the previous code was flattening to i.text
         instructions: instructions.map((i) =>
           i.type === "section" ? i : { text: i.text, images: i.images || [] }
         ),
@@ -118,18 +120,27 @@ export default function HomeView({ onSaved, allRecipes }) {
     setManualActive(true);
   };
 
-  const handleSaveManual = async () => {
+  // Same pattern as handleSaveUploaded — cleanedIngredients comes directly
+  // from RecipeEditor to avoid the stale closure problem
+  const handleSaveManual = async (cleanedIngredients) => {
+    const finalIngredients = cleanedIngredients !== null
+      ? cleanedIngredients
+      : manualIngredients;
     try {
       if (isGuest) {
         const image_url = manualImageToSave || null;
         addGuestRecipe({
           title: manualTitle,
-          ingredients: manualIngredients
+          ingredients: finalIngredients
             .filter((i) => i.type === "section" || i.text.trim())
-            .map((i) => i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })),
+            .map((i) =>
+              i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
+            ),
           instructions: manualInstructions
             .filter((i) => i.type === "section" || i.text.trim())
-            .map((i) => i.type === "section" ? i : { text: i.text, images: i.images || [] }),
+            .map((i) =>
+              i.type === "section" ? i : { text: i.text, images: i.images || [] }
+            ),
           notes: [],
           image_url,
         });
@@ -148,12 +159,16 @@ export default function HomeView({ onSaved, allRecipes }) {
       }
       await saveRecipe({
         title: manualTitle,
-        ingredients: manualIngredients
+        ingredients: finalIngredients
           .filter((i) => i.type === "section" || i.text.trim())
-          .map((i) => i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })),
+          .map((i) =>
+            i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
+          ),
         instructions: manualInstructions
           .filter((i) => i.type === "section" || i.text.trim())
-          .map((i) => i.type === "section" ? i : { text: i.text, images: i.images || [] }),
+          .map((i) =>
+            i.type === "section" ? i : { text: i.text, images: i.images || [] }
+          ),
         notes: [],
         image_url,
       }, token);

@@ -9,6 +9,7 @@
 // "1 1/2 cups milk"    → { amount: 1.5, unit: "cup", name: "milk" }
 // "2 eggs"             → { amount: 2, unit: null, name: "eggs" }
 // "salt to taste"      → { amount: null, unit: null, name: "salt to taste" }
+// "a jar of peaches"   → { amount: 1, unit: "jar", name: "peaches" }
 // "juice of 1 lemon"   → null (can't parse — needs Gemini)
 
 // Canonical unit names — we normalize variations to these
@@ -43,6 +44,7 @@ const UNIT_MAP = {
   piece: "piece", pieces: "piece",
   clove: "clove", cloves: "clove",
   can: "can", cans: "can",
+  jar: "jar", jars: "jar",
   package: "package", packages: "package", pkg: "package",
   stick: "stick", sticks: "stick",
 };
@@ -54,7 +56,7 @@ const UNICODE_FRACTIONS = {
   "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
 };
 
-// Matches a leading quantity: "2", "1/2", "1 1/2", "2.5"
+// Matches a leading numeric quantity: "2", "1/2", "1 1/2", "2.5"
 const QUANTITY_RE = /^(\d+\s+\d+\/\d+|\d+\/\d+|\d+\.?\d*)\s*/;
 
 // Converts a fraction string like "1/2" to a decimal
@@ -84,18 +86,24 @@ export function tryParseIngredient(ingredient) {
     str = str.replaceAll(unicode, ascii);
   }
 
-  // Step 1: try to extract a leading quantity
-  const quantityMatch = str.match(QUANTITY_RE);
+  // Step 1: try to extract a leading quantity.
+  // Also recognize "a" and "an" as amount: 1 — common in recipes like
+  // "a jar of peaches" or "an onion".
   let amount = null;
   let rest = str;
 
+  const quantityMatch = str.match(QUANTITY_RE);
   if (quantityMatch) {
     amount = parseQuantity(quantityMatch[1]);
     rest = str.slice(quantityMatch[0].length).trim();
+  } else if (/^an?\s+/i.test(str)) {
+    // "a" or "an" at the start — treat as quantity 1
+    amount = 1;
+    rest = str.replace(/^an?\s+/i, "").trim();
   }
 
-  // Step 2: try to match a unit at the start of what's left
-  // We only look at the first word (or two, for "fluid ounce")
+  // Step 2: try to match a unit at the start of what's left.
+  // We only look at the first word (or two, for "fluid ounce").
   const words = rest.split(/\s+/);
   const firstWord = words[0]?.toLowerCase();
   const firstTwo = words.slice(0, 2).join(" ").toLowerCase();
@@ -112,14 +120,21 @@ export function tryParseIngredient(ingredient) {
     nameWords = words.slice(1);
   }
 
+  // Step 3: strip a leading "of" that appears after container units —
+  // "a jar of peaches" parses unit="jar", then nameWords=["of","peaches"].
+  // Drop the "of" so name becomes "peaches" not "of peaches".
+  if (nameWords[0]?.toLowerCase() === "of") {
+    nameWords = nameWords.slice(1);
+  }
+
   const name = nameWords.join(" ").trim();
 
-  // Step 3: decide if the result is trustworthy enough to return
-  // If there's no name at all, we couldn't parse it meaningfully
+  // Step 4: decide if the result is trustworthy enough to return.
+  // If there's no name at all, we couldn't parse it meaningfully.
   if (!name) return null;
 
   // If there was no quantity and no unit, the whole string is the name —
-  // that's valid for things like "salt to taste"
+  // that's valid for things like "salt to taste".
   return { amount, unit, name };
 }
 
@@ -129,8 +144,28 @@ export function formatIngredient({ amount, unit, name }) {
   const parts = [];
   if (amount !== null) parts.push(formatNumber(amount));
   if (unit !== null) parts.push(pluralizeUnit(unit, amount));
+  // Add "of" back between container units and their contents for natural phrasing:
+  // "2 jars peaches" reads oddly — "2 jars of peaches" is more natural.
+  // We do this for units that typically appear with "of" in recipes.
+  const ofUnits = new Set(["jar", "jars", "can", "cans", "stick", "sticks",
+    "package", "packages", "handful", "handfuls", "piece", "pieces",
+    "slice", "slices", "pinch", "pinches", "dash", "dashes"]);
+  if (unit !== null && ofUnits.has(pluralizeUnit(unit, amount))) {
+    parts.push("of");
+  }
   parts.push(name);
   return parts.join(" ");
+}
+
+// Normalizes a string for fuzzy searching — strips accents (so "Jalapeño"
+// matches "Jalapeno") and removes apostrophes (so "Joe's" matches "Joes").
+// Shared between CollectionView search and the link picker in RecipeEditor.
+export function normalizeSearch(str) {
+  return str
+    .normalize("NFD")                  // decompose accented chars: "ñ" → "n" + combining tilde
+    .replace(/\p{Diacritic}/gu, "")    // strip the combining accent marks
+    .replace(/[''`]/g, "")            // strip apostrophes/smart quotes
+    .toLowerCase();
 }
 
 // Pluralizes a unit based on the amount
@@ -142,7 +177,8 @@ function pluralizeUnit(unit, amount) {
     l: "l", ml: "ml", g: "g", kg: "kg", lb: "lbs",
     pinch: "pinches", dash: "dashes", handful: "handfuls",
     slice: "slices", piece: "pieces", clove: "cloves",
-    can: "cans", package: "packages", stick: "sticks",
+    can: "cans", jar: "jars",
+    package: "packages", stick: "sticks",
     "fl oz": "fl oz",
   };
   return plurals[unit] || unit;
