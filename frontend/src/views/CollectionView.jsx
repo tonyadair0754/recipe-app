@@ -15,6 +15,9 @@ export default function CollectionView({ saved, onSelect }) {
 
     // Check ingredients (may be structured objects { amount, unit, name } or plain strings)
     if (r.ingredients.some((ing) => {
+      // Section headers have type: "section" — read their text directly
+      // instead of passing them through formatIngredient (which expects amount/unit/name)
+      if (ing.type === "section") return (ing.text || "").toLowerCase().includes(q);
       const text = typeof ing === "string" ? ing : formatIngredient(ing);
       return text.toLowerCase().includes(q);
     })) return true;
