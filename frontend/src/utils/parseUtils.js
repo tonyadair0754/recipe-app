@@ -47,6 +47,10 @@ const UNIT_MAP = {
   jar: "jar", jars: "jar",
   package: "package", packages: "package", pkg: "package",
   stick: "stick", sticks: "stick",
+  bottle: "bottle", bottles: "bottle",
+  bag: "bag", bags: "bag",
+  box: "box", boxes: "box",
+  bunch: "bunch", bunches: "bunch",
 };
 
 // These appear in recipe text copied from websites or typed on mobile keyboards.
@@ -149,7 +153,8 @@ export function formatIngredient({ amount, unit, name }) {
   // We do this for units that typically appear with "of" in recipes.
   const ofUnits = new Set(["jar", "jars", "can", "cans", "stick", "sticks",
     "package", "packages", "handful", "handfuls", "piece", "pieces",
-    "slice", "slices", "pinch", "pinches", "dash", "dashes"]);
+    "slice", "slices", "pinch", "pinches", "dash", "dashes",
+    "bottle", "bottles", "bag", "bags", "box", "boxes", "bunch", "bunches"]);
   if (unit !== null && ofUnits.has(pluralizeUnit(unit, amount))) {
     parts.push("of");
   }
@@ -180,6 +185,7 @@ function pluralizeUnit(unit, amount) {
     can: "cans", jar: "jars",
     package: "packages", stick: "sticks",
     "fl oz": "fl oz",
+    bottle: "bottles", bag: "bags", box: "boxes", bunch: "bunches",
   };
   return plurals[unit] || unit;
 }

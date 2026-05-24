@@ -99,9 +99,12 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
           ingredients: finalIngredients.map((i) =>
             i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
           ),
-          instructions: editInstructions.map((i) =>
-            i.type === "section" ? i : { text: i.text, images: i.images || [] }
-          ),
+          // filter out blank instruction rows before saving
+          instructions: editInstructions
+            .filter((i) => i.type === "section" || i.text.trim())
+            .map((i) =>
+              i.type === "section" ? i : { text: i.text, images: i.images || [] }
+            ),
           image_url,
         };
         updateGuestRecipe(recipe.id, updated);
@@ -120,9 +123,12 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       await updateRecipe(recipe.id, {
         title: editTitle,
         ingredients,
-        instructions: editInstructions.map((i) =>
-          i.type === "section" ? i : { text: i.text, images: i.images || [] }
-        ),
+        // filter out blank instruction rows before saving
+        instructions: editInstructions
+          .filter((i) => i.type === "section" || i.text.trim())
+          .map((i) =>
+            i.type === "section" ? i : { text: i.text, images: i.images || [] }
+          ),
         notes: recipe.notes || [],
         language: recipe.language,
         image_url,
@@ -131,9 +137,11 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         ...recipe,
         title: editTitle,
         ingredients,
-        instructions: editInstructions.map((i) =>
-          i.type === "section" ? i : { text: i.text, images: i.images || [] }
-        ),
+        instructions: editInstructions
+          .filter((i) => i.type === "section" || i.text.trim())
+          .map((i) =>
+            i.type === "section" ? i : { text: i.text, images: i.images || [] }
+          ),
         image_url,
       });
       setEditing(false); setEditImageFile(null);
@@ -429,34 +437,39 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
               <p className="section-heading">{instructionsLabel}</p>
               <ol className="detail-list" style={{ listStyle: "none" }}>
-                {displayed.instructions.map((step, i) => {
-                  // Section headers in instructions
-                  if (step.type === "section") {
-                    return <p key={i} className="section-label">{step.text || "—"}</p>;
-                  }
+                {(() => {
+                  let stepNum = 0;
+                  return displayed.instructions.map((step, i) => {
+                    // Section headers render as a label; don't count them as steps
+                    if (step.type === "section") {
+                      return <p key={i} className="section-label">{step.text || "—"}</p>;
+                    }
 
-                  const text = typeof step === "string" ? step : step.text;
-                  const images = typeof step === "string" ? [] : (step.images || []);
-                  return (
-                    <li key={i} style={{ display: "flex", flexDirection: "column", marginBottom: "10px" }}>
-                      <div><span className="step-num">{i + 1}</span>{text}</div>
-                      {images.length > 0 && (
-                        <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                          {/* Step images */}
-                          {images.map((url, imgIndex) => (
-                            <img
-                              key={imgIndex}
-                              src={url}
-                              alt={`Step ${i + 1}`}
-                              onClick={() => setLightboxUrl(url)}
-                              style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px", cursor: "zoom-in" }}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
+                    // Only real steps get a number
+                    stepNum++;
+                    const text = typeof step === "string" ? step : step.text;
+                    const images = typeof step === "string" ? [] : (step.images || []);
+                    return (
+                      <li key={i} style={{ display: "flex", flexDirection: "column", marginBottom: "10px" }}>
+                        <div><span className="step-num">{stepNum}</span>{text}</div>
+                        {images.length > 0 && (
+                          <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                            {/* Step images */}
+                            {images.map((url, imgIndex) => (
+                              <img
+                                key={imgIndex}
+                                src={url}
+                                alt={`Step ${stepNum}`}
+                                onClick={() => setLightboxUrl(url)}
+                                style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px", cursor: "zoom-in" }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  });
+                })()}
               </ol>
 
               {showingTranslation && !translationSaved && (
@@ -551,15 +564,19 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
             <p className="section-heading">Instructions</p>
             <ol className="detail-list" style={{ listStyle: "none" }}>
-              {subRecipe.instructions.map((step, i) => {
-                if (step.type === "section") return <p key={i} className="section-label">{step.text}</p>;
-                const text = typeof step === "string" ? step : step.text;
-                return (
-                  <li key={i}>
-                    <span className="step-num">{i + 1}</span>{text}
-                  </li>
-                );
-              })}
+              {(() => {
+                let stepNum = 0;
+                return subRecipe.instructions.map((step, i) => {
+                  if (step.type === "section") return <p key={i} className="section-label">{step.text}</p>;
+                  stepNum++;
+                  const text = typeof step === "string" ? step : step.text;
+                  return (
+                    <li key={i}>
+                      <span className="step-num">{stepNum}</span>{text}
+                    </li>
+                  );
+                });
+              })()}
             </ol>
 
           </div>
