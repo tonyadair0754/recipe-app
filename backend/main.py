@@ -42,6 +42,11 @@ class Recipe(Base):
     language = Column(String, default="en")
     image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Labels are stored as a JSON array of strings, e.g. '["Weeknight", "Dessert"]'.
+    # We use the same pattern as ingredients/notes — JSON in a String column —
+    # so no migration tool is needed. SQLAlchemy's create_all adds this column
+    # automatically on next server startup if it doesn't exist yet.
+    labels = Column(String, default="[]")
 
 Base.metadata.create_all(bind=engine)
 
@@ -196,6 +201,17 @@ async def upload_image(
         raise HTTPException(status_code=500, detail=str(e))
 
 # ── Recipes ──
+
+# Helper to safely parse a JSON string that may be None or missing the labels field.
+# Older rows in the DB won't have a labels column value yet — default to empty list.
+def parse_labels(raw):
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
 @app.post("/recipes")
 def save_recipe(data: dict, current_user=Depends(get_current_user)):
     db = SessionLocal()
@@ -208,6 +224,8 @@ def save_recipe(data: dict, current_user=Depends(get_current_user)):
             notes=json.dumps(data.get("notes", [])),
             language=data.get("language", "en"),
             image_url=data.get("image_url", None),
+            # Default to empty list if the caller didn't send labels
+            labels=json.dumps(data.get("labels", [])),
         )
         db.add(recipe)
         db.commit()
@@ -220,6 +238,7 @@ def save_recipe(data: dict, current_user=Depends(get_current_user)):
             "notes": json.loads(recipe.notes),
             "language": recipe.language,
             "image_url": recipe.image_url,
+            "labels": parse_labels(recipe.labels),
             "created_at": recipe.created_at,
         }
     finally:
@@ -302,6 +321,8 @@ def get_recipes(current_user=Depends(get_current_user)):
                 "notes": json.loads(r.notes),
                 "language": r.language,
                 "image_url": r.image_url,
+                # parse_labels handles rows that predate the labels column
+                "labels": parse_labels(r.labels),
                 "created_at": r.created_at,
             }
             for r in recipes
@@ -325,6 +346,9 @@ def update_recipe(recipe_id: int, data: dict, current_user=Depends(get_current_u
         recipe.notes = json.dumps(data.get("notes", []))
         recipe.language = data.get("language", recipe.language)
         recipe.image_url = data.get("image_url", recipe.image_url)
+        # Preserve existing labels if the caller didn't send new ones
+        recipe.labels = json.dumps(data.get("labels", parse_labels(recipe.labels)))
+        print("DEBUG labels:", recipe.labels)
         db.commit()
         db.refresh(recipe)
         return {"message": "Updated"}

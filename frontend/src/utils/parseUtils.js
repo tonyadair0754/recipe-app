@@ -80,6 +80,12 @@ function parseQuantity(raw) {
   return parseFraction(trimmed);
 }
 
+// Matches a fused quantity+unit like "50g", "1.5kg", "200ml" with no space.
+// The unit must be a known metric abbreviation — we don't try to handle
+// fused "50cups" since nobody writes that.
+// Capture groups: [1] = number part, [2] = unit part
+const FUSED_METRIC_RE = /^(\d+\.?\d*)(g|kg|ml|l|oz|lb|lbs)(\s+|$)/i;
+
 // Tries to parse an ingredient string into { amount, unit, name }.
 // Returns null if the string is too ambiguous for client-side parsing
 // (caller should send those to Gemini instead).
@@ -88,6 +94,36 @@ export function tryParseIngredient(ingredient) {
   let str = ingredient.trim();
   for (const [unicode, ascii] of Object.entries(UNICODE_FRACTIONS)) {
     str = str.replaceAll(unicode, ascii);
+  }
+
+  // Pre-processing step A: parenthetical format — "flour (50g)" or "flour (2 cups)".
+  // The name comes first, and the measurement is in parentheses at the end.
+  // We extract both parts and reassemble as "[measurement] [name]" so the
+  // existing parser below can handle it in its normal left-to-right way.
+  const parenMatch = str.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  if (parenMatch) {
+    const namePart = parenMatch[1].trim();   // "flour"
+    const insideParen = parenMatch[2].trim(); // "50g" or "2 cups"
+    // Only rewrite if what's inside the parens looks like a measurement,
+    // not a clarification like "flour (sifted)" or "tomatoes (about 3)".
+    // A measurement starts with a digit or a known unit word.
+    const looksLikeMeasurement = /^\d/.test(insideParen) ||
+      Object.keys(UNIT_MAP).some((u) => insideParen.toLowerCase().startsWith(u));
+    if (looksLikeMeasurement) {
+      // Put the measurement first so the standard parser sees "[50g] [flour]"
+      str = `${insideParen} ${namePart}`;
+    }
+  }
+
+  // Pre-processing step B: fused metric format — "50g flour", "1.5kg butter".
+  // Some recipe sites and metric users write the unit directly after the number
+  // with no space. Split them apart so "50g" becomes "50 g" before parsing.
+  const fusedMatch = str.match(FUSED_METRIC_RE);
+  if (fusedMatch) {
+    const numPart      = fusedMatch[1]; // "50"
+    const unitPart     = fusedMatch[2]; // "g"
+    const afterFused   = str.slice(fusedMatch[0].length); // "flour"
+    str = `${numPart} ${unitPart} ${afterFused}`.trim(); // → "50 g flour"
   }
 
   // Step 1: try to extract a leading quantity.

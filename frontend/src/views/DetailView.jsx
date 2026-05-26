@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import RecipeEditor from "../components/RecipeEditor";
 import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeImage_toStorage, scaleRecipe } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -49,13 +49,17 @@ async function translateTextForGuest(recipe) {
 }
 
 export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate, allRecipes }) {
-  const { token, isGuest, updateGuestRecipe, deleteGuestRecipe, addGuestRecipe } = useAuth();
+  const { token, isGuest, updateGuestRecipe, deleteGuestRecipe, addGuestRecipe, recordRecent } = useAuth();
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editIngredients, setEditIngredients] = useState([]);
   const [editInstructions, setEditInstructions] = useState([]);
+  // Labels are a flat array of strings, e.g. ["Favorite", "Weeknight"].
+  // We initialize from the recipe prop; older recipes without labels default to [].
+  const [editLabels, setEditLabels] = useState([]);
 
   const [editImageFile, setEditImageFile] = useState(null);
+
   const [removeExistingImage, setRemoveExistingImage] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
 
@@ -75,10 +79,22 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const isKorean = recipe.language === "ko";
   const displayed = showingTranslation && translated ? translated : recipe;
 
+  // Record this recipe as recently viewed whenever the displayed recipe changes.
+  // We depend on recipe.id rather than using [] so that navigating from one recipe
+  // to another via the sub-recipe panel (which reuses the same DetailView component
+  // rather than unmounting it) still registers each visit. Without react-router,
+  // the component stays mounted and [] would only fire on the very first open.
+  useEffect(() => {
+    recordRecent(recipe.id);
+  }, [recipe.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const startEditing = () => {
     setEditTitle(recipe.title);
     setEditIngredients(toItems(recipe.ingredients));
     setEditInstructions(toItems(recipe.instructions));
+    // Seed the label editor with whatever labels the recipe already has.
+    // recipe.labels may be undefined on older records — default to [].
+    setEditLabels(recipe.labels || []);
     setScaledIngredients(null);
     setEditing(true);
   };
@@ -99,12 +115,15 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
           ingredients: finalIngredients.map((i) =>
             i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
           ),
-          // filter out blank instruction rows before saving
+          // FIX: filter out blank instruction rows before saving,
+          // the same way blank ingredient rows are already filtered in RecipeEditor.
+          // Without this, empty boxes persist as uneditable ghost items in the detail view.
           instructions: editInstructions
             .filter((i) => i.type === "section" || i.text.trim())
             .map((i) =>
               i.type === "section" ? i : { text: i.text, images: i.images || [] }
             ),
+          labels: editLabels,
           image_url,
         };
         updateGuestRecipe(recipe.id, updated);
@@ -123,7 +142,9 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       await updateRecipe(recipe.id, {
         title: editTitle,
         ingredients,
-        // filter out blank instruction rows before saving
+        // FIX: filter out blank instruction rows before saving,
+        // the same way blank ingredient rows are already filtered in RecipeEditor.
+        // Without this, empty boxes persist as uneditable ghost items in the detail view.
         instructions: editInstructions
           .filter((i) => i.type === "section" || i.text.trim())
           .map((i) =>
@@ -131,6 +152,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
           ),
         notes: recipe.notes || [],
         language: recipe.language,
+        labels: editLabels,
         image_url,
       }, token);
       onUpdated({
@@ -142,6 +164,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
           .map((i) =>
             i.type === "section" ? i : { text: i.text, images: i.images || [] }
           ),
+        labels: editLabels,
         image_url,
       });
       setEditing(false); setEditImageFile(null);
@@ -303,6 +326,19 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             </div>
           </div>
 
+          {/* Label pills — shown in view mode beneath the title/action row.
+              "Favorite" gets a star prefix; other labels render as plain pills.
+              Nothing renders if the recipe has no labels yet. */}
+          {(recipe.labels || []).length > 0 && (
+            <div className="label-pill-row view-mode" style={{ marginBottom: "12px" }}>
+              {recipe.labels.map((label) => (
+                <span key={label} className={`label-pill ${label === "Favorite" ? "favorite" : ""}`}>
+                  {label === "Favorite" ? "⭐ Favorite" : label}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Header image */}
           {recipe.image_url && !removeExistingImage && (
             <div style={{ marginBottom: "16px", marginTop: "12px" }}>
@@ -437,6 +473,14 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
               <p className="section-heading">{instructionsLabel}</p>
               <ol className="detail-list" style={{ listStyle: "none" }}>
+                {/* FIX: use a separate step counter instead of the array index `i`.
+                    The array index counts section headers too, causing numbers to skip
+                    after each section (e.g. Step 1, [section], Step 3).
+                    We wrap the map in an IIFE (immediately invoked function expression)
+                    because JSX only allows expressions inside {}, not `let` statements.
+                    The IIFE gives us a private scope to declare stepNum, then returns
+                    the mapped array — exactly the same pattern as scaledIndex above,
+                    just without needing it declared outside the JSX block. */}
                 {(() => {
                   let stepNum = 0;
                   return displayed.instructions.map((step, i) => {
@@ -500,6 +544,8 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             setIngredients={setEditIngredients}
             instructions={editInstructions}
             setInstructions={setEditInstructions}
+            labels={editLabels}
+            setLabels={setEditLabels}
             onSave={handleSaveEdits}
             onCancel={() => { setEditing(false); setEditImageFile(null); setRemoveExistingImage(false); }}
             saveLabel={isKorean ? "저장" : "Save changes"}
@@ -564,6 +610,8 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
             <p className="section-heading">Instructions</p>
             <ol className="detail-list" style={{ listStyle: "none" }}>
+              {/* FIX: same step counter fix as the main recipe view above —
+                  sub-recipe panel had the same array-index bug */}
               {(() => {
                 let stepNum = 0;
                 return subRecipe.instructions.map((step, i) => {

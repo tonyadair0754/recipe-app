@@ -973,3 +973,252 @@ textarea:focus { border-color: #2d6a4f; }
     max-width: 72px;
   }
 }
+
+/* ── Collection tabs ── */
+.collection-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 0.5px solid #e8e8e2;
+  padding-bottom: 0;
+}
+
+.collection-tab {
+  font-size: 13px;
+  font-family: Arial, sans-serif;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px 10px;
+  color: #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: -1px; /* overlap the border-bottom of the container */
+  transition: color 0.15s;
+}
+
+.collection-tab:hover { color: #1a1a1a; }
+
+.collection-tab.active {
+  color: #2d6a4f;
+  font-weight: 500;
+  border-bottom-color: #2d6a4f;
+}
+
+/* Small count badge inside the tab (e.g. the number of favorites) */
+.tab-badge {
+  font-size: 11px;
+  background: #e8e8e2;
+  color: #888;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.collection-tab.active .tab-badge {
+  background: #d1ede2;
+  color: #2d6a4f;
+}
+
+/* ── Label filter row (below tabs in CollectionView) ── */
+.label-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.label-filter-hint {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #bbb;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
+.label-filter-pill {
+  font-size: 12px;
+  font-family: Arial, sans-serif;
+  background: #f5f5f0;
+  border: 0.5px solid #d0d0ca;
+  border-radius: 999px;
+  padding: 4px 12px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.label-filter-pill:hover {
+  border-color: #2d6a4f;
+  color: #2d6a4f;
+}
+
+.label-filter-pill.active {
+  background: #f4fbf6;
+  border-color: #2d6a4f;
+  color: #2d6a4f;
+  font-weight: 500;
+}
+
+.label-filter-clear {
+  font-size: 12px;
+  font-family: Arial, sans-serif;
+  background: none;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  padding: 4px 6px;
+  transition: color 0.15s;
+  margin-left: 2px;
+}
+
+.label-filter-clear:hover { color: #c0392b; }
+
+/* ── Label pills on recipe cards ── */
+.card-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.card-label-pill {
+  font-size: 11px;
+  background: #f0f0eb;
+  border: 0.5px solid #d8d8d2;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.card-label-pill.favorite {
+  background: #fef9ec;
+  border-color: #f5d878;
+  color: #997a00;
+}
+
+.card-label-pill.overflow {
+  background: none;
+  border-color: transparent;
+  color: #bbb;
+  padding-left: 2px;
+}
+
+/* ── Label editor inside RecipeEditor ── */
+.label-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+/* One-click Favorite toggle button */
+.label-favorite-btn {
+  font-size: 13px;
+  font-family: Arial, sans-serif;
+  align-self: flex-start;
+  background: #f5f5f0;
+  border: 0.5px solid #d0d0ca;
+  border-radius: 7px;
+  padding: 7px 14px;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.label-favorite-btn:hover {
+  border-color: #f5d878;
+  color: #997a00;
+  background: #fef9ec;
+}
+
+.label-favorite-btn.active {
+  background: #fef9ec;
+  border-color: #f5d878;
+  color: #997a00;
+  font-weight: 500;
+}
+
+/* Row that holds existing pills + the type-to-add input */
+.label-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 0.5px solid #e0e0da;
+  border-radius: 7px;
+  background: #f5f5f0;
+  cursor: text; /* clicking anywhere in the row feels like clicking the input */
+}
+
+/* Each existing label rendered as a removable pill */
+.label-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  background: #fff;
+  border: 0.5px solid #d0d0ca;
+  border-radius: 999px;
+  padding: 2px 4px 2px 10px;
+  color: #555;
+  white-space: nowrap;
+}
+
+.label-pill.favorite {
+  background: #fef9ec;
+  border-color: #f5d878;
+  color: #997a00;
+}
+
+.label-pill-remove {
+  background: none;
+  border: none;
+  color: #bbb;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  font-family: Arial, sans-serif;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.label-pill-remove:hover { color: #c0392b; }
+
+/* The invisible text input that grows to fill leftover space in the pill row */
+.label-input {
+  flex: 1;
+  min-width: 120px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-family: Arial, sans-serif;
+  color: #1a1a1a;
+  outline: none;
+  padding: 2px 0;
+}
+
+.label-input::placeholder { color: #ccc; }
+
+/* Label pills in DetailView's view mode — read-only, slightly larger */
+.label-pill-row.view-mode {
+  background: transparent;
+  border: none;
+  padding: 0;
+  gap: 6px;
+}
+
+.label-pill-row.view-mode .label-pill {
+  padding: 3px 10px;
+  font-size: 12px;
+}

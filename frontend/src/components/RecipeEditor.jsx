@@ -10,6 +10,8 @@ export default function RecipeEditor({
   setIngredients,
   instructions,
   setInstructions,
+  labels,
+  setLabels,
   onSave,
   onCancel,
   saveLabel,
@@ -33,6 +35,13 @@ export default function RecipeEditor({
   const [openPickerIndex, setOpenPickerIndex] = useState(null);
   // Search string inside the link picker dropdown
   const [pickerSearch, setPickerSearch] = useState("");
+  // The text currently typed in the label input field
+  const [labelInput, setLabelInput] = useState("");
+
+  // Safely normalize the labels prop — it may be undefined on older recipes
+  // that predate the labels feature, so we always fall back to an empty array.
+  const currentLabels = labels || [];
+  const isFavorite = currentLabels.includes("Favorite");
 
   // When a scanned image is passed in, show it as the preview automatically
   useEffect(() => {
@@ -159,6 +168,50 @@ export default function RecipeEditor({
     setPickerSearch("");
   };
 
+  // ── Label helpers ──
+
+  // Adds a label if it's non-empty and not already present (case-insensitive check).
+  // Called when the user presses Enter or comma in the label input.
+  const addLabel = (raw) => {
+    const trimmed = raw.trim().replace(/,$/, ""); // strip trailing comma
+    if (!trimmed) return;
+    // Prevent duplicates regardless of capitalization
+    const alreadyExists = currentLabels.some(
+      (l) => l.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (!alreadyExists) {
+      setLabels([...currentLabels, trimmed]);
+    }
+    setLabelInput("");
+  };
+
+  const removeLabel = (label) => {
+    setLabels(currentLabels.filter((l) => l !== label));
+  };
+
+  // The Favorite toggle is a special-case: it adds/removes the exact string "Favorite"
+  // so CollectionView can filter on it without any hardcoded logic in the DB.
+  const toggleFavorite = () => {
+    if (isFavorite) {
+      setLabels(currentLabels.filter((l) => l !== "Favorite"));
+    } else {
+      // Put Favorite first so it always appears at the start of the pill row
+      setLabels(["Favorite", ...currentLabels.filter((l) => l !== "Favorite")]);
+    }
+  };
+
+  const handleLabelKeyDown = (e) => {
+    // Enter or comma both commit the current input as a new label
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault(); // stop Enter from submitting any parent form
+      addLabel(labelInput);
+    }
+    // Backspace on an empty input removes the last label — a common tag-input pattern
+    if (e.key === "Backspace" && labelInput === "" && currentLabels.length > 0) {
+      setLabels(currentLabels.slice(0, -1));
+    }
+  };
+
   const handleSaveClick = async () => {
     // Korean ingredients are plain strings — the English regex parser can't handle them,
     // and they don't need structuring. Skip parsing entirely and save as-is.
@@ -191,8 +244,6 @@ export default function RecipeEditor({
         if (!raw) continue;
 
         if (typeof ingredients[i].structured === "object" && ingredients[i].structured !== null) {
-          // BUG FIX: if the user edited the text of a linked ingredient, sync
-          // the name field in structured so the rename isn't silently dropped.
           const existing = ingredients[i].structured;
           const formattedFromStructured = formatIngredient(existing);
           const userChangedName = raw !== formattedFromStructured;
@@ -462,6 +513,49 @@ export default function RecipeEditor({
         >
           + Add section
         </button>
+      </div>
+
+      {/* ── Labels ── */}
+      <p className="section-heading">Labels</p>
+      <div className="label-editor">
+        {/* One-click Favorite toggle — separate from free-text labels so it's
+            always easy to find even if the user has many custom labels */}
+        <button
+          className={`label-favorite-btn ${isFavorite ? "active" : ""}`}
+          onClick={toggleFavorite}
+          title={isFavorite ? "Remove from favorites" : "Mark as favorite"}
+        >
+          {isFavorite ? "⭐ Favorite" : "☆ Favorite"}
+        </button>
+
+        {/* Existing label pills — each has an × to remove it */}
+        <div className="label-pill-row">
+          {currentLabels
+            .filter((l) => l !== "Favorite") // Favorite is shown via the button above
+            .map((label) => (
+              <span key={label} className="label-pill">
+                {label}
+                <button
+                  className="label-pill-remove"
+                  onClick={() => removeLabel(label)}
+                  title={`Remove "${label}"`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+
+          {/* Tag input — Enter or comma commits the typed text as a new label */}
+          <input
+            className="label-input"
+            type="text"
+            placeholder="Add a label…"
+            value={labelInput}
+            onChange={(e) => setLabelInput(e.target.value)}
+            onKeyDown={handleLabelKeyDown}
+            onBlur={() => addLabel(labelInput)} // also commit on blur (clicking away)
+          />
+        </div>
       </div>
 
       <div className="editor-actions">

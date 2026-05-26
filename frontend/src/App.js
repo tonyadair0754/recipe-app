@@ -37,7 +37,28 @@ export default function App() {
   const handleSaved = () => { if (!isGuest) loadRecipes(); goCollection(); };
   const handleSelect = (r) => { setSelected(r); setView("detail"); };
   const handleDeleted = () => { if (!isGuest) loadRecipes(); goCollection(); };
-  const handleUpdated = (r) => { setSelected(r); if (!isGuest) loadRecipes(); };
+
+  const handleUpdated = (r) => {
+    // Always update selected immediately so DetailView re-renders with the
+    // new data (including labels) without waiting for the network.
+    setSelected(r);
+
+    if (!isGuest) {
+      // Also patch the recipe in the saved list directly so that navigating
+      // back to the collection and reopening the recipe doesn't show stale
+      // data from before the edit. Without this, the user sees the correct
+      // data in the detail view (from setSelected), but as soon as they go
+      // back and re-open the recipe, handleSelect pulls from `saved` which
+      // still has the pre-edit version — causing labels (and any other edits)
+      // to appear to vanish.
+      setSaved(prev => prev.map(recipe => recipe.id === r.id ? r : recipe));
+
+      // Still refetch in the background so saved stays fully in sync with
+      // the backend (e.g. if the server transforms any fields on write).
+      loadRecipes();
+    }
+  };
+
   const handleNavigate = (r) => { setSelected(r); setView("detail"); };
 
   // Push a history entry each time the view changes so the browser back

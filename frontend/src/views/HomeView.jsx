@@ -26,10 +26,16 @@ export default function HomeView({ onSaved, allRecipes }) {
   const [ingredients, setIngredients] = useState([]);
   const [instructions, setInstructions] = useState([]);
   const [editedTitle, setEditedTitle] = useState("");
+  // Labels for the scan flow — empty by default, user adds them in RecipeEditor
+  const [uploadedLabels, setUploadedLabels] = useState([]);
+
   const [manualTitle, setManualTitle] = useState("");
   const [manualActive, setManualActive] = useState(false);
   const [manualIngredients, setManualIngredients] = useState([]);
   const [manualInstructions, setManualInstructions] = useState([]);
+  // Labels for the manual entry flow — separate state so the two flows don't share
+  const [manualLabels, setManualLabels] = useState([]);
+
   const [imageToSave, setImageToSave] = useState(null);
   const [manualImageToSave, setManualImageToSave] = useState(null);
 
@@ -47,12 +53,15 @@ export default function HomeView({ onSaved, allRecipes }) {
     setLoading(true);
     setRecipe(null);
     try {
-      //upload endpoint works without auth — token is optional
+      // upload endpoint works without auth — token is optional
       const data = await uploadRecipeImage(file, token);
       setRecipe(data);
       setEditedTitle(data.title);
       setIngredients(toItems(data.ingredients));
       setInstructions(toItems(data.instructions));
+      // Reset labels each time a new scan is analyzed so stale labels
+      // from a previous scan don't carry over
+      setUploadedLabels([]);
     } catch (e) {
       alert(e.response ? JSON.stringify(e.response.data) : "Upload failed");
     } finally {
@@ -79,11 +88,10 @@ export default function HomeView({ onSaved, allRecipes }) {
             i.type === "section" ? i : { text: i.text, images: i.images || [] }
           ),
           notes: recipe.notes || [],
+          labels: uploadedLabels,
           image_url,
         });
-        setRecipe(null);
-        setFile(null);
-        setImageToSave(null);
+        setRecipe(null); setFile(null); setImageToSave(null); setUploadedLabels([]);
         onSaved();
         return;
       }
@@ -101,11 +109,10 @@ export default function HomeView({ onSaved, allRecipes }) {
           i.type === "section" ? i : { text: i.text, images: i.images || [] }
         ),
         notes: recipe.notes || [],
+        labels: uploadedLabels,
         image_url,
       }, token);
-      setRecipe(null);
-      setFile(null);
-      setImageToSave(null);
+      setRecipe(null); setFile(null); setImageToSave(null); setUploadedLabels([]);
       onSaved();
     } catch (e) {
       console.error("Save failed:", e);
@@ -117,6 +124,8 @@ export default function HomeView({ onSaved, allRecipes }) {
     if (!manualTitle.trim()) return;
     setManualIngredients([{ id: `ing-${Date.now()}`, text: "" }]);
     setManualInstructions([{ id: `ins-${Date.now()}`, text: "" }]);
+    // Reset labels each time a new manual recipe is started
+    setManualLabels([]);
     setManualActive(true);
   };
 
@@ -142,13 +151,12 @@ export default function HomeView({ onSaved, allRecipes }) {
               i.type === "section" ? i : { text: i.text, images: i.images || [] }
             ),
           notes: [],
+          labels: manualLabels,
           image_url,
         });
-        setManualTitle("");
-        setManualActive(false);
-        setManualIngredients([]);
-        setManualInstructions([]);
-        setManualImageToSave(null);
+        setManualTitle(""); setManualActive(false);
+        setManualIngredients([]); setManualInstructions([]);
+        setManualLabels([]); setManualImageToSave(null);
         onSaved();
         return;
       }
@@ -170,13 +178,12 @@ export default function HomeView({ onSaved, allRecipes }) {
             i.type === "section" ? i : { text: i.text, images: i.images || [] }
           ),
         notes: [],
+        labels: manualLabels,
         image_url,
       }, token);
-      setManualTitle("");
-      setManualActive(false);
-      setManualIngredients([]);
-      setManualInstructions([]);
-      setManualImageToSave(null);
+      setManualTitle(""); setManualActive(false);
+      setManualIngredients([]); setManualInstructions([]);
+      setManualLabels([]); setManualImageToSave(null);
       onSaved();
     } catch (e) { alert("Save failed"); }
   };
@@ -195,8 +202,14 @@ export default function HomeView({ onSaved, allRecipes }) {
           setIngredients={setManualIngredients}
           instructions={manualInstructions}
           setInstructions={setManualInstructions}
+          labels={manualLabels}
+          setLabels={setManualLabels}
           onSave={handleSaveManual}
-          onCancel={() => { setManualActive(false); setManualTitle(""); }}
+          onCancel={() => {
+            setManualActive(false);
+            setManualTitle("");
+            setManualLabels([]);
+          }}
           saveLabel="Save to collection"
           onImageChange={setManualImageToSave}
           allRecipes={allRecipes}
@@ -291,8 +304,15 @@ export default function HomeView({ onSaved, allRecipes }) {
             setIngredients={setIngredients}
             instructions={instructions}
             setInstructions={setInstructions}
+            labels={uploadedLabels}
+            setLabels={setUploadedLabels}
             onSave={handleSaveUploaded}
-            onCancel={() => { setRecipe(null); setFile(null); setEditedTitle(""); }}
+            onCancel={() => {
+              setRecipe(null);
+              setFile(null);
+              setEditedTitle("");
+              setUploadedLabels([]);
+            }}
             saveLabel="Save to collection"
             imageFile={file}
             onImageChange={setImageToSave}
