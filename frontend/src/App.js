@@ -1,17 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { fetchRecipes } from "./api";
 import { useAuth } from "./context/AuthContext";
 import HomeView from "./views/HomeView";
 import CollectionView from "./views/CollectionView";
 import DetailView from "./views/DetailView";
+import SharedRecipeView from "./views/SharedRecipeView";
 import AuthView from "./views/AuthView";
 import "./App.css";
 
-export default function App() {
+// ── Shell ──
+// The Shell renders the topbar, footer, and the route-specific content.
+// It's a separate component (rather than putting everything in App) so that
+// useNavigate() — which only works inside a <BrowserRouter> — is available here.
+function Shell() {
   const { user, token, logout, isGuest, guestRecipes, loading, wakingUp } = useAuth();
-  const [view, setView] = useState("home");
+  const navigate = useNavigate();
   const [saved, setSaved] = useState([]);
-  const [selected, setSelected] = useState(null);
 
   const loadRecipes = useCallback(async () => {
     try {
@@ -20,76 +25,44 @@ export default function App() {
     } catch (e) { console.log(e); }
   }, [token]);
 
-  const handleLogout = () => {
-    if (window.confirm("Sign out of RecipeLens?")) logout();
-  };
-
   useEffect(() => {
     if (token) loadRecipes();
   }, [token, loadRecipes]);
+
+  const handleLogout = () => {
+    if (window.confirm("Sign out of RecipeLens?")) logout();
+  };
 
   // For guests, the "saved" list is just their localStorage recipes
   const displayedRecipes = isGuest ? guestRecipes : saved;
   const collectionCount = displayedRecipes.length;
 
-  const goHome = () => setView("home");
-  const goCollection = () => { setView("collection"); setSelected(null); };
-  const handleSaved = () => { if (!isGuest) loadRecipes(); goCollection(); };
-  const handleSelect = (r) => { setSelected(r); setView("detail"); };
-  const handleDeleted = () => { if (!isGuest) loadRecipes(); goCollection(); };
+  // Called after a recipe is saved so the collection stays in sync.
+  // Auth users refetch from the backend; guests rely on AuthContext state.
+  const handleSaved = useCallback(() => {
+    if (!isGuest) loadRecipes();
+    navigate("/collection");
+  }, [isGuest, loadRecipes, navigate]);
 
-  const handleUpdated = (r) => {
-    // Always update selected immediately so DetailView re-renders with the
-    // new data (including labels) without waiting for the network.
-    setSelected(r);
+  // Called by DetailView after a successful edit so the collection list
+  // reflects the change immediately without waiting for a refetch.
+  const handleUpdated = useCallback((r) => {
+    setSaved(prev => prev.map(recipe => recipe.id === r.id ? r : recipe));
+    if (!isGuest) loadRecipes();
+  }, [isGuest, loadRecipes]);
 
-    if (!isGuest) {
-      // Also patch the recipe in the saved list directly so that navigating
-      // back to the collection and reopening the recipe doesn't show stale
-      // data from before the edit. Without this, the user sees the correct
-      // data in the detail view (from setSelected), but as soon as they go
-      // back and re-open the recipe, handleSelect pulls from `saved` which
-      // still has the pre-edit version — causing labels (and any other edits)
-      // to appear to vanish.
-      setSaved(prev => prev.map(recipe => recipe.id === r.id ? r : recipe));
-
-      // Still refetch in the background so saved stays fully in sync with
-      // the backend (e.g. if the server transforms any fields on write).
-      loadRecipes();
-    }
-  };
-
-  const handleNavigate = (r) => { setSelected(r); setView("detail"); };
-
-  // Push a history entry each time the view changes so the browser back
-  // button works within the app. Without this, all views share one URL
-  // and the back button exits the app entirely.
-  useEffect(() => {
-    // Push a new entry so the back button has somewhere to go
-    window.history.pushState({ view }, "", window.location.pathname);
-  }, [view]);
-
-  useEffect(() => {
-    const handlePopState = (e) => {
-      // When the user hits back, restore the view from the history state.
-      // If there's no state (they've gone back to the very first entry), go home.
-      const prev = e.state?.view;
-      if (prev === "collection") { setView("collection"); setSelected(null); }
-      else if (prev === "detail" && selected) setView("detail");
-      else setView("home");
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [selected]);
+  // Called by DetailView after a recipe is deleted.
+  const handleDeleted = useCallback(() => {
+    if (!isGuest) loadRecipes();
+    navigate("/collection");
+  }, [isGuest, loadRecipes, navigate]);
 
   if (loading) {
     return (
       <div className="app">
         <div className="loading-state" style={{ paddingTop: "80px" }}>
           <div>
-            <span className="loading-dot" />
-            <span className="loading-dot" />
-            <span className="loading-dot" />
+            <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
           </div>
         </div>
       </div>
@@ -101,9 +74,7 @@ export default function App() {
       <div className="app">
         <div className="loading-state" style={{ paddingTop: "80px" }}>
           <div>
-            <span className="loading-dot" />
-            <span className="loading-dot" />
-            <span className="loading-dot" />
+            <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
           </div>
           <div style={{ marginTop: "24px", maxWidth: "280px", margin: "24px auto 0", textAlign: "center" }}>
             <p style={{ fontSize: "14px", color: "#555", lineHeight: "1.6", marginBottom: "8px" }}>
@@ -118,68 +89,102 @@ export default function App() {
     );
   }
 
-  if (!user && !isGuest) return <AuthView />;
+  // /shared/:token is always accessible — render it outside the auth gate.
+  // We handle that route before the auth check below so anonymous visitors
+  // can view shared recipes without being redirected to the login screen.
+  // (The SharedRecipeView route is declared in the Routes block below, but
+  // the auth check would intercept it, so we let react-router handle it first
+  // by placing the auth redirect only on the routes that need protection.)
 
   return (
     <div className="app">
       <div className="accent-bar" />
       <div className="topbar">
-        <div className="logo" onClick={goHome} style={{ cursor: "pointer" }}>
+        <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
           <div className="logo-dot" />
           RecipeLens
         </div>
         <div className="nav-right">
-          <button className={`nav-link ${view === "home" ? "active" : ""}`} onClick={goHome}>
-            Add recipe
-          </button>
-          <button
-            className={`nav-link ${view === "collection" || view === "detail" ? "active" : ""}`}
-            onClick={goCollection}
-          >
-            My collection ({collectionCount})
-          </button>
-          {isGuest ? (
-            <button className="nav-link" onClick={() => { /* navigate to auth */ window.location.reload(); }}>
-              Sign in
-            </button>
-          ) : (
-            <button className="nav-link" onClick={handleLogout}>
-              Sign out
-            </button>
+          {/* Only show the main nav for authenticated/guest users, not on shared pages */}
+          {(user || isGuest) && (
+            <>
+              <button
+                className="nav-link"
+                onClick={() => navigate("/")}
+                style={{ color: window.location.pathname === "/" ? "#2d6a4f" : undefined, fontWeight: window.location.pathname === "/" ? 500 : undefined }}
+              >
+                Add recipe
+              </button>
+              <button
+                className="nav-link"
+                onClick={() => navigate("/collection")}
+                style={{ color: window.location.pathname.startsWith("/collection") || window.location.pathname.startsWith("/recipe") ? "#2d6a4f" : undefined, fontWeight: window.location.pathname.startsWith("/collection") || window.location.pathname.startsWith("/recipe") ? 500 : undefined }}
+              >
+                My collection ({collectionCount})
+              </button>
+            </>
           )}
+          {isGuest ? (
+            <button className="nav-link" onClick={() => window.location.reload()}>Sign in</button>
+          ) : user ? (
+            <button className="nav-link" onClick={handleLogout}>Sign out</button>
+          ) : null}
         </div>
       </div>
 
-      {view === "home" && <HomeView onSaved={handleSaved} allRecipes={displayedRecipes} />}
-      {view === "collection" && (
-        <CollectionView
-          saved={displayedRecipes}
-          onSelect={handleSelect}
-        />
-      )}
-      {view === "detail" && selected && (
-        <DetailView
-          recipe={selected}
-          onBack={goCollection}
-          onDeleted={handleDeleted}
-          onUpdated={handleUpdated}
-          onSaved={isGuest ? () => {} : loadRecipes}
-          onNavigate={handleNavigate}
-          allRecipes={displayedRecipes}
-        />
-      )}
+      <Routes>
+        {/* Public route — no auth needed */}
+        <Route path="/shared/:shareToken" element={<SharedRecipeView allRecipes={displayedRecipes} />} />
 
-      {/* Footer — outside all views so it appears on every page */}
+        {/* Auth-gated routes */}
+        {!user && !isGuest ? (
+          <>
+            <Route path="*" element={<AuthView />} />
+          </>
+        ) : (
+          <>
+            <Route
+              path="/"
+              element={<HomeView onSaved={handleSaved} allRecipes={displayedRecipes} />}
+            />
+            <Route
+              path="/collection"
+              element={<CollectionView saved={displayedRecipes} />}
+            />
+            <Route
+              path="/recipe/:id"
+              element={
+                <DetailView
+                  allRecipes={displayedRecipes}
+                  onUpdated={handleUpdated}
+                  onDeleted={handleDeleted}
+                  onSaved={handleSaved}
+                />
+              }
+            />
+            {/* Catch-all — redirect unknown paths to home */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        )}
+      </Routes>
+
       <footer className="app-footer">
         Made by Tony Adair.{" "}
-        <a
-          href="https://tonyadair0754.github.io#projects"
-          target="_blank"
-          rel="noreferrer"
-        >
+        <a href="https://tonyadair0754.github.io#projects" target="_blank" rel="noreferrer">
           Check out my other projects!
         </a>
       </footer>
     </div>
+  );
+}
+
+// ── App root ──
+// BrowserRouter must wrap everything that uses react-router hooks.
+// Shell is a child so it can call useNavigate().
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Shell />
+    </BrowserRouter>
   );
 }

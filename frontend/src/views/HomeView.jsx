@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import RecipeEditor from "../components/RecipeEditor";
 import { uploadRecipeImage, saveRecipe, uploadRecipeImage_toStorage } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -19,6 +20,7 @@ const toItems = (arr) =>
 
 export default function HomeView({ onSaved, allRecipes }) {
   const { token, isGuest, addGuestRecipe } = useAuth();
+  const navigate = useNavigate();
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -26,14 +28,12 @@ export default function HomeView({ onSaved, allRecipes }) {
   const [ingredients, setIngredients] = useState([]);
   const [instructions, setInstructions] = useState([]);
   const [editedTitle, setEditedTitle] = useState("");
-  // Labels for the scan flow — empty by default, user adds them in RecipeEditor
   const [uploadedLabels, setUploadedLabels] = useState([]);
 
   const [manualTitle, setManualTitle] = useState("");
   const [manualActive, setManualActive] = useState(false);
   const [manualIngredients, setManualIngredients] = useState([]);
   const [manualInstructions, setManualInstructions] = useState([]);
-  // Labels for the manual entry flow — separate state so the two flows don't share
   const [manualLabels, setManualLabels] = useState([]);
 
   const [imageToSave, setImageToSave] = useState(null);
@@ -53,14 +53,11 @@ export default function HomeView({ onSaved, allRecipes }) {
     setLoading(true);
     setRecipe(null);
     try {
-      // upload endpoint works without auth — token is optional
       const data = await uploadRecipeImage(file, token);
       setRecipe(data);
       setEditedTitle(data.title);
       setIngredients(toItems(data.ingredients));
       setInstructions(toItems(data.instructions));
-      // Reset labels each time a new scan is analyzed so stale labels
-      // from a previous scan don't carry over
       setUploadedLabels([]);
     } catch (e) {
       alert(e.response ? JSON.stringify(e.response.data) : "Upload failed");
@@ -69,13 +66,16 @@ export default function HomeView({ onSaved, allRecipes }) {
     }
   };
 
-  // cleanedIngredients is passed directly from RecipeEditor's handleSaveClick,
-  // bypassing the stale closure problem — we use it instead of reading from state.
   const handleSaveUploaded = async (cleanedIngredients) => {
-    // Korean recipes pass null (no parsing needed), fall back to current state
-    const finalIngredients = cleanedIngredients !== null
-      ? cleanedIngredients
-      : ingredients;
+    const finalIngredients = cleanedIngredients !== null ? cleanedIngredients : ingredients;
+
+    // Auto-add "Korean" label if Gemini detected a Korean recipe
+    const language = recipe.language || "en";
+    const labelsWithKorean =
+      language === "ko" && !uploadedLabels.includes("Korean")
+        ? ["Korean", ...uploadedLabels]
+        : uploadedLabels;
+
     try {
       if (isGuest) {
         const image_url = imageToSave || null;
@@ -88,7 +88,7 @@ export default function HomeView({ onSaved, allRecipes }) {
             i.type === "section" ? i : { text: i.text, images: i.images || [] }
           ),
           notes: recipe.notes || [],
-          labels: uploadedLabels,
+          labels: labelsWithKorean,
           image_url,
         });
         setRecipe(null); setFile(null); setImageToSave(null); setUploadedLabels([]);
@@ -100,7 +100,7 @@ export default function HomeView({ onSaved, allRecipes }) {
         const result = await uploadRecipeImage_toStorage(imageToSave, token);
         image_url = result.image_url;
       }
-      await saveRecipe({
+      const saved = await saveRecipe({
         title: editedTitle,
         ingredients: finalIngredients.map((i) =>
           i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
@@ -109,11 +109,12 @@ export default function HomeView({ onSaved, allRecipes }) {
           i.type === "section" ? i : { text: i.text, images: i.images || [] }
         ),
         notes: recipe.notes || [],
-        labels: uploadedLabels,
+        labels: labelsWithKorean,
         image_url,
       }, token);
       setRecipe(null); setFile(null); setImageToSave(null); setUploadedLabels([]);
-      onSaved();
+      onSaved(); // triggers loadRecipes() in Shell
+      navigate(`/recipe/${saved.id}`); // go straight to the new recipe
     } catch (e) {
       console.error("Save failed:", e);
       alert("Save failed: " + e.message);
@@ -124,17 +125,12 @@ export default function HomeView({ onSaved, allRecipes }) {
     if (!manualTitle.trim()) return;
     setManualIngredients([{ id: `ing-${Date.now()}`, text: "" }]);
     setManualInstructions([{ id: `ins-${Date.now()}`, text: "" }]);
-    // Reset labels each time a new manual recipe is started
     setManualLabels([]);
     setManualActive(true);
   };
 
-  // Same pattern as handleSaveUploaded — cleanedIngredients comes directly
-  // from RecipeEditor to avoid the stale closure problem
   const handleSaveManual = async (cleanedIngredients) => {
-    const finalIngredients = cleanedIngredients !== null
-      ? cleanedIngredients
-      : manualIngredients;
+    const finalIngredients = cleanedIngredients !== null ? cleanedIngredients : manualIngredients;
     try {
       if (isGuest) {
         const image_url = manualImageToSave || null;
@@ -165,7 +161,7 @@ export default function HomeView({ onSaved, allRecipes }) {
         const result = await uploadRecipeImage_toStorage(manualImageToSave, token);
         image_url = result.image_url;
       }
-      await saveRecipe({
+      const saved = await saveRecipe({
         title: manualTitle,
         ingredients: finalIngredients
           .filter((i) => i.type === "section" || i.text.trim())
@@ -184,7 +180,8 @@ export default function HomeView({ onSaved, allRecipes }) {
       setManualTitle(""); setManualActive(false);
       setManualIngredients([]); setManualInstructions([]);
       setManualLabels([]); setManualImageToSave(null);
-      onSaved();
+      onSaved(); // triggers loadRecipes() in Shell
+      navigate(`/recipe/${saved.id}`); // go straight to the new recipe
     } catch (e) { alert("Save failed"); }
   };
 
@@ -205,11 +202,7 @@ export default function HomeView({ onSaved, allRecipes }) {
           labels={manualLabels}
           setLabels={setManualLabels}
           onSave={handleSaveManual}
-          onCancel={() => {
-            setManualActive(false);
-            setManualTitle("");
-            setManualLabels([]);
-          }}
+          onCancel={() => { setManualActive(false); setManualTitle(""); setManualLabels([]); }}
           saveLabel="Save to collection"
           onImageChange={setManualImageToSave}
           allRecipes={allRecipes}
@@ -239,9 +232,7 @@ export default function HomeView({ onSaved, allRecipes }) {
             onClick={() => document.getElementById("file-input").click()}
           >
             <input
-              id="file-input"
-              type="file"
-              accept="image/*"
+              id="file-input" type="file" accept="image/*"
               onChange={(e) => handleFile(e.target.files[0])}
             />
             {file
@@ -307,12 +298,7 @@ export default function HomeView({ onSaved, allRecipes }) {
             labels={uploadedLabels}
             setLabels={setUploadedLabels}
             onSave={handleSaveUploaded}
-            onCancel={() => {
-              setRecipe(null);
-              setFile(null);
-              setEditedTitle("");
-              setUploadedLabels([]);
-            }}
+            onCancel={() => { setRecipe(null); setFile(null); setEditedTitle(""); setUploadedLabels([]); }}
             saveLabel="Save to collection"
             imageFile={file}
             onImageChange={setImageToSave}

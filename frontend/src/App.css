@@ -1222,3 +1222,77 @@ textarea:focus { border-color: #2d6a4f; }
   padding: 3px 10px;
   font-size: 12px;
 }
+
+/* ── Share button ── */
+.btn-share {
+  font-size: 13px;
+  background: transparent;
+  color: #666;
+  border: 0.5px solid #d0d0ca;
+  padding: 9px 20px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  transition: all 0.15s;
+}
+
+.btn-share:hover { border-color: #2d6a4f; color: #2d6a4f; }
+.btn-share:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Active state — recipe is already shared, link exists */
+.btn-share.active {
+  background: #f4fbf6;
+  border-color: #2d6a4f;
+  color: #2d6a4f;
+}
+
+/* ── Shared recipe banner ── */
+.shared-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: #f4fbf6;
+  border: 0.5px solid #b7e4c7;
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.shared-banner-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shared-banner-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #2d6a4f;
+}
+
+.shared-banner-title {
+  font-size: 14px;
+  color: #1a1a1a;
+  font-weight: 500;
+}
+
+.shared-banner-right { flex-shrink: 0; }
+
+.shared-banner-saved {
+  font-size: 13px;
+  color: #2d6a4f;
+  font-weight: 500;
+}
+
+@media (max-width: 600px) {
+  .shared-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .shared-banner-right { width: 100%; }
+  .shared-banner-right .btn-primary { width: 100%; }
+}

@@ -51,6 +51,13 @@ export const fetchRecipes = async (token) => {
   return res.data;
 };
 
+// Fetch a single recipe by ID — used by DetailView to load its own data
+// after navigating to /recipe/:id, including on page refresh.
+export const fetchRecipeById = async (id, token) => {
+  const res = await api.get(`/recipes/${id}`, authHeaders(token));
+  return res.data;
+};
+
 export const saveRecipe = async (recipe, token) => {
   const res = await api.post(`/recipes`, recipe, authHeaders(token));
   return res.data;
@@ -73,6 +80,36 @@ export const translateRecipe = async (id, language = "Korean", token) => {
   );
   return res.data;
 };
+
+// ── Sharing ──
+
+// Generates (or retrieves) a share token for the recipe.
+// Returns { share_token: "abc123" } — the frontend builds the full URL.
+export const shareRecipe = async (id, token) => {
+  const res = await api.post(`/recipes/${id}/share`, {}, authHeaders(token));
+  return res.data;
+};
+
+// Revokes the share link — anyone with the old URL will get a 404.
+export const unshareRecipe = async (id, token) => {
+  const res = await api.delete(`/recipes/${id}/share`, authHeaders(token));
+  return res.data;
+};
+
+// Public — no auth token needed. Fetches the recipe for a given share token.
+export const fetchSharedRecipe = async (shareToken) => {
+  const res = await api.get(`/shared/${shareToken}`);
+  return res.data;
+};
+
+// Saves a shared recipe into the viewer's own collection.
+// This is just saveRecipe under a different name for clarity at the call site.
+export const saveSharedRecipe = async (recipe, token) => {
+  const res = await api.post(`/recipes`, recipe, authHeaders(token));
+  return res.data;
+};
+
+// ── Scaling / parsing ──
 
 // Scales ingredient objects { amount, unit, name } that couldn't be handled client-side.
 // Sends plain strings so it works for both English and Korean recipes.

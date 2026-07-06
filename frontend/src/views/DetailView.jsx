@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import RecipeEditor from "../components/RecipeEditor";
-import { updateRecipe, deleteRecipe, translateRecipe, saveRecipe, uploadRecipeImage_toStorage, scaleRecipe } from "../api";
+import {
+  updateRecipe, deleteRecipe, translateRecipe, saveRecipe,
+  uploadRecipeImage_toStorage, scaleRecipe, fetchRecipeById,
+  shareRecipe, unshareRecipe,
+} from "../api";
 import { useAuth } from "../context/AuthContext";
 import { tryScaleAll } from "../utils/scaleUtils";
 import { formatIngredient } from "../utils/parseUtils";
@@ -15,7 +20,7 @@ const toItems = (arr) =>
     }
     return {
       id: `item-${Date.now()}-${i}`,
-      // Ingredients are now structured objects { amount, unit, name } —
+      // Ingredients are structured objects { amount, unit, name } —
       // format them back to a readable string for the editor's text field.
       // Instructions are objects with a text field.
       // Old recipes are plain strings. Handle all three.
@@ -48,18 +53,22 @@ async function translateTextForGuest(recipe) {
   return res.json();
 }
 
-export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSaved, onNavigate, allRecipes }) {
-  const { token, isGuest, updateGuestRecipe, deleteGuestRecipe, addGuestRecipe, recordRecent } = useAuth();
+export default function DetailView({ allRecipes, onUpdated, onDeleted, onSaved }) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { token, isGuest, guestRecipes, updateGuestRecipe, deleteGuestRecipe, addGuestRecipe, recordRecent } = useAuth();
+
+  // recipe is null while loading, then the full recipe object once fetched
+  const [recipe, setRecipe] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editIngredients, setEditIngredients] = useState([]);
   const [editInstructions, setEditInstructions] = useState([]);
-  // Labels are a flat array of strings, e.g. ["Favorite", "Weeknight"].
-  // We initialize from the recipe prop; older recipes without labels default to [].
   const [editLabels, setEditLabels] = useState([]);
 
   const [editImageFile, setEditImageFile] = useState(null);
-
   const [removeExistingImage, setRemoveExistingImage] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
 
@@ -73,27 +82,80 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
   const [scaledIngredients, setScaledIngredients] = useState(null);
   const [scaling, setScaling] = useState(false);
 
+  // Share state
+  const [shareToken, setShareToken] = useState(null);
+  const [sharing, setSharing] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+
   // The linked sub-recipe currently shown in the side panel, or null if closed
   const [subRecipe, setSubRecipe] = useState(null);
 
+  // ── Load recipe ──
+  // We depend on `id` so navigating from one recipe to another (e.g. via
+  // the sub-recipe panel) re-fetches the new recipe automatically.
+  useEffect(() => {
+    setRecipe(null);
+    setLoadError(null);
+    setEditing(false);
+    setTranslated(null);
+    setShowingTranslation(false);
+    setScaledIngredients(null);
+    setShareToken(null);
+
+    if (isGuest) {
+      // Guests: find the recipe in localStorage-backed guestRecipes by ID
+      const found = guestRecipes.find((r) => String(r.id) === String(id));
+      if (found) {
+        setRecipe(found);
+        setShareToken(found.share_token || null);
+        recordRecent(found.id);
+      } else {
+        setLoadError("Recipe not found.");
+      }
+    } else {
+      // Auth users: fetch from backend so the detail view works on
+      // direct navigation, page refresh, and deep links
+      fetchRecipeById(id, token)
+        .then((data) => {
+          setRecipe(data);
+          setShareToken(data.share_token || null);
+          recordRecent(data.id);
+        })
+        .catch(() => setLoadError("Recipe not found or you don't have access."));
+    }
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loadError) {
+    return (
+      <>
+        <button className="detail-back" onClick={() => navigate("/collection")}>← My collection</button>
+        <div className="empty-state" style={{ paddingTop: "48px" }}>
+          <p>{loadError}</p>
+        </div>
+      </>
+    );
+  }
+
+  if (!recipe) {
+    return (
+      <>
+        <button className="detail-back" onClick={() => navigate("/collection")}>← My collection</button>
+        <div className="loading-state" style={{ paddingTop: "48px" }}>
+          <div>
+            <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
+          </div>
+        </div>
+      </>
+    );
+  }
+
   const isKorean = recipe.language === "ko";
   const displayed = showingTranslation && translated ? translated : recipe;
-
-  // Record this recipe as recently viewed whenever the displayed recipe changes.
-  // We depend on recipe.id rather than using [] so that navigating from one recipe
-  // to another via the sub-recipe panel (which reuses the same DetailView component
-  // rather than unmounting it) still registers each visit. Without react-router,
-  // the component stays mounted and [] would only fire on the very first open.
-  useEffect(() => {
-    recordRecent(recipe.id);
-  }, [recipe.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startEditing = () => {
     setEditTitle(recipe.title);
     setEditIngredients(toItems(recipe.ingredients));
     setEditInstructions(toItems(recipe.instructions));
-    // Seed the label editor with whatever labels the recipe already has.
-    // recipe.labels may be undefined on older records — default to [].
     setEditLabels(recipe.labels || []);
     setScaledIngredients(null);
     setEditing(true);
@@ -115,9 +177,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
           ingredients: finalIngredients.map((i) =>
             i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
           ),
-          // FIX: filter out blank instruction rows before saving,
-          // the same way blank ingredient rows are already filtered in RecipeEditor.
-          // Without this, empty boxes persist as uneditable ghost items in the detail view.
+          // Filter out blank instruction rows before saving
           instructions: editInstructions
             .filter((i) => i.type === "section" || i.text.trim())
             .map((i) =>
@@ -127,7 +187,9 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
           image_url,
         };
         updateGuestRecipe(recipe.id, updated);
-        onUpdated({ ...recipe, ...updated });
+        const updatedRecipe = { ...recipe, ...updated };
+        setRecipe(updatedRecipe);
+        onUpdated(updatedRecipe);
         setEditing(false); setEditImageFile(null); setRemoveExistingImage(false);
         return;
       }
@@ -139,34 +201,30 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
       const ingredients = finalIngredients.map((i) =>
         i.type === "section" ? i : (i.structured || { amount: null, unit: null, name: i.text })
       );
+      const instructions = editInstructions
+        .filter((i) => i.type === "section" || i.text.trim())
+        .map((i) =>
+          i.type === "section" ? i : { text: i.text, images: i.images || [] }
+        );
       await updateRecipe(recipe.id, {
         title: editTitle,
         ingredients,
-        // FIX: filter out blank instruction rows before saving,
-        // the same way blank ingredient rows are already filtered in RecipeEditor.
-        // Without this, empty boxes persist as uneditable ghost items in the detail view.
-        instructions: editInstructions
-          .filter((i) => i.type === "section" || i.text.trim())
-          .map((i) =>
-            i.type === "section" ? i : { text: i.text, images: i.images || [] }
-          ),
+        instructions,
         notes: recipe.notes || [],
         language: recipe.language,
         labels: editLabels,
         image_url,
       }, token);
-      onUpdated({
+      const updatedRecipe = {
         ...recipe,
         title: editTitle,
         ingredients,
-        instructions: editInstructions
-          .filter((i) => i.type === "section" || i.text.trim())
-          .map((i) =>
-            i.type === "section" ? i : { text: i.text, images: i.images || [] }
-          ),
+        instructions,
         labels: editLabels,
         image_url,
-      });
+      };
+      setRecipe(updatedRecipe);
+      onUpdated(updatedRecipe);
       setEditing(false); setEditImageFile(null);
       setTranslated(null); setShowingTranslation(false); setRemoveExistingImage(false);
     } catch (e) { alert("Update failed"); }
@@ -208,13 +266,10 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
       // Normalize ingredients to plain strings for scaling.
       // Skip section headers — they have no quantity to scale.
-      // Korean ingredients are already plain strings; English ones may be
-      // structured objects that need formatting first.
       const ingredientStrings = displayed.ingredients
         .filter((item) => !item.type)
         .map((item) => typeof item === "string" ? item : formatIngredient(item));
 
-      // First pass: try client-side math for everything
       const { scaled, needsGemini } = tryScaleAll(ingredientStrings, ratio);
 
       if (needsGemini.length === 0) {
@@ -222,14 +277,9 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         return;
       }
 
-      // Second pass: send unparseable ingredients to Gemini as plain strings.
-      // For Korean recipes this will be all ingredients; for English recipes
-      // just the ones tryScaleAll couldn't handle (e.g. "juice of 1 lemon").
-      // We send plain strings here regardless — /scale-text handles both.
       const hardStrings = needsGemini.map((i) => ingredientStrings[i]);
       const data = await scaleRecipe(hardStrings, originalServings, targetServings);
 
-      // Splice results back into the correct positions
       needsGemini.forEach((originalIndex, geminiIndex) => {
         scaled[originalIndex] = data.ingredients[geminiIndex];
       });
@@ -244,9 +294,6 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
   const handleSaveTranslation = async () => {
     try {
-      // Carry step images from the original recipe if the step count matches.
-      // Gemini returns plain strings, so we convert them to objects and attach
-      // the original images where possible.
       const translatedInstructions = translated.instructions.map((step, i) => {
         const originalStep = recipe.instructions[i];
         const originalImages = originalStep
@@ -255,17 +302,22 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         return { text: step, images: originalImages };
       });
 
+      // Always include "Korean" on the translated copy; carry other labels too
+      const originalLabels = recipe.labels || [];
+      const translationLabels = originalLabels.includes("Korean")
+        ? originalLabels
+        : ["Korean", ...originalLabels];
+
       if (isGuest) {
         addGuestRecipe({
           title: translated.title,
-          // translated.ingredients are plain Korean strings from Gemini — store them as-is.
-          // Don't pass them through structuring since Korean word order breaks our formatter.
           ingredients: translated.ingredients.map((ing) =>
             typeof ing === "string" ? ing : formatIngredient(ing)
           ),
           instructions: translatedInstructions,
           notes: [],
           language: "ko",
+          labels: translationLabels,
           image_url: recipe.image_url || null,
         });
         setTranslationSaved(true);
@@ -280,19 +332,51 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
         instructions: translatedInstructions,
         notes: [],
         language: "ko",
+        labels: translationLabels,
         image_url: recipe.image_url || null,
       }, token);
       setTranslationSaved(true);
       onSaved();
-      onNavigate(saved);
+      navigate(`/recipe/${saved.id}`);
     } catch (e) {
       console.error("Translation save failed:", e);
       alert("Could not save translation: " + (e.response?.data?.detail || e.message));
     }
   };
 
+  // ── Share handlers ──
+
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      // If we already have a token (from a previous share), skip the API call
+      const token_ = shareToken || (await shareRecipe(recipe.id, token)).share_token;
+      if (!shareToken) setShareToken(token_);
+      const url = `${window.location.origin}/shared/${token_}`;
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      // Reset "Copied!" label after 2 seconds
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch (e) {
+      alert("Could not generate share link");
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleUnshare = async () => {
+    if (!window.confirm("Revoke the share link? Anyone with the link will no longer be able to view this recipe.")) return;
+    try {
+      await unshareRecipe(recipe.id, token);
+      setShareToken(null);
+      setShareCopied(false);
+    } catch (e) {
+      alert("Could not revoke share link");
+    }
+  };
+
   // Find the full recipe object for a given linked ID so we can show it in the panel
-  const findLinkedRecipe = (id) => (allRecipes || []).find((r) => r.id === id) || null;
+  const findLinkedRecipe = (linkedId) => (allRecipes || []).find((r) => r.id === linkedId) || null;
 
   const ingredientsLabel = isKorean ? "재료" : showingTranslation ? "재료" : "Ingredients";
   const instructionsLabel = isKorean ? "조리법" : showingTranslation ? "조리법" : "Instructions";
@@ -303,7 +387,7 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
   return (
     <>
-      <button className="detail-back" onClick={onBack}>← My collection</button>
+      <button className="detail-back" onClick={() => navigate("/collection")}>← My collection</button>
 
       {!editing ? (
         <>
@@ -321,14 +405,30 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
                   </button>
                 )
               )}
+              {/* Share button — guests can't generate server-side tokens so hide it */}
+              {!isGuest && (
+                shareToken ? (
+                  // Already shared — show "Copy link" (reuses existing token) and "Revoke"
+                  <>
+                    <button className="btn-share active" onClick={handleShare} disabled={sharing}>
+                      {shareCopied ? "✓ Copied!" : "🔗 Copy link"}
+                    </button>
+                    <button className="btn-secondary" onClick={handleUnshare} title="Revoke share link">
+                      Unshare
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn-share" onClick={handleShare} disabled={sharing}>
+                    {sharing ? "Generating…" : "🔗 Share"}
+                  </button>
+                )
+              )}
               <button className="btn-secondary" onClick={startEditing}>Edit</button>
               <button className="btn-danger" onClick={handleDelete}>Delete</button>
             </div>
           </div>
 
-          {/* Label pills — shown in view mode beneath the title/action row.
-              "Favorite" gets a star prefix; other labels render as plain pills.
-              Nothing renders if the recipe has no labels yet. */}
+          {/* Label pills in view mode */}
           {(recipe.labels || []).length > 0 && (
             <div className="label-pill-row view-mode" style={{ marginBottom: "12px" }}>
               {recipe.labels.map((label) => (
@@ -362,46 +462,28 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
           {!translating && (
             <>
-              {/* Servings scaler — only shown for authenticated users on non-Korean recipes in view mode */}
+              {/* Servings scaler */}
               <div className="scaler-bar">
                 <span className="scaler-label">Scale recipe:</span>
-
-                {/* Original servings — what the recipe currently makes */}
                 <label className="scaler-field">
                   From
                   <input
-                    type="number"
-                    min="1"
-                    value={originalServings}
-                    onChange={(e) => {
-                      setOriginalServings(Number(e.target.value));
-                      // Clear any existing scaled result when the inputs change,
-                      // so the displayed ingredients always match the current inputs
-                      setScaledIngredients(null);
-                    }}
+                    type="number" min="1" value={originalServings}
+                    onChange={(e) => { setOriginalServings(Number(e.target.value)); setScaledIngredients(null); }}
                     className="scaler-input"
                   />
                   servings
                 </label>
-
                 <span className="scaler-arrow">→</span>
-
-                {/* Target servings — what the user wants */}
                 <label className="scaler-field">
                   To
                   <input
-                    type="number"
-                    min="1"
-                    value={targetServings}
-                    onChange={(e) => {
-                      setTargetServings(Number(e.target.value));
-                      setScaledIngredients(null);
-                    }}
+                    type="number" min="1" value={targetServings}
+                    onChange={(e) => { setTargetServings(Number(e.target.value)); setScaledIngredients(null); }}
                     className="scaler-input"
                   />
                   servings
                 </label>
-
                 <button
                   className="btn-secondary"
                   onClick={handleScale}
@@ -409,60 +491,38 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
                 >
                   {scaling ? "Scaling…" : "Scale"}
                 </button>
-
-                {/* Reset button only appears once we have a scaled result */}
                 {scaledIngredients && (
-                  <button
-                    className="btn-add"
-                    onClick={() => setScaledIngredients(null)}
-                  >
-                    Reset
-                  </button>
+                  <button className="btn-add" onClick={() => setScaledIngredients(null)}>Reset</button>
                 )}
               </div>
 
               <p className="section-heading">{ingredientsLabel}</p>
               <ul className="detail-list">
                 {displayed.ingredients.map((item, i) => {
-                  // Section headers render as a label, not a list item
                   if (item.type === "section") {
-                    return (
-                      <p key={i} className="section-label">{item.text || "—"}</p>
-                    );
+                    return <p key={i} className="section-label">{item.text || "—"}</p>;
                   }
 
-                  // For scaled view, pull from scaledIngredients using a
-                  // separate counter that skips section rows
                   const displayText = scaledIngredients
                     ? scaledIngredients[scaledIndex]
                     : (typeof item === "string" ? item : formatIngredient(item));
 
-                  // Does this ingredient link to another recipe?
                   const linkedId = item.linkedRecipeId ?? item.structured?.linkedRecipeId;
-
                   const currentScaledIndex = scaledIndex;
                   if (!item.type) scaledIndex++;
 
                   return (
                     <li key={i}>
                       {linkedId ? (
-                        // Clickable chip that opens the side panel
-                        <>
-                          <button
-                            className="linked-chip"
-                            onClick={() => setSubRecipe(findLinkedRecipe(linkedId))}
-                            title="View linked recipe"
-                          >
-                            <span className="linked-chip-icon">📖</span>
-                            {displayText}
-                          </button>
-                        </>
-                      ) : (
-                        /* Format structured ingredients as readable strings.
-                           Scaled ingredients are already plain strings from tryScaleAll/Gemini.
-                           Old recipes are plain strings too — typeof check handles both. */
-                        displayText
-                      )}
+                        <button
+                          className="linked-chip"
+                          onClick={() => setSubRecipe(findLinkedRecipe(linkedId))}
+                          title="View linked recipe"
+                        >
+                          <span className="linked-chip-icon">📖</span>
+                          {displayText}
+                        </button>
+                      ) : displayText}
                       {scaledIngredients && currentScaledIndex === 0 && (
                         <span className="scaler-badge">×{(targetServings / originalServings).toFixed(2).replace(/\.?0+$/, "")}</span>
                       )}
@@ -473,23 +533,13 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
 
               <p className="section-heading">{instructionsLabel}</p>
               <ol className="detail-list" style={{ listStyle: "none" }}>
-                {/* FIX: use a separate step counter instead of the array index `i`.
-                    The array index counts section headers too, causing numbers to skip
-                    after each section (e.g. Step 1, [section], Step 3).
-                    We wrap the map in an IIFE (immediately invoked function expression)
-                    because JSX only allows expressions inside {}, not `let` statements.
-                    The IIFE gives us a private scope to declare stepNum, then returns
-                    the mapped array — exactly the same pattern as scaledIndex above,
-                    just without needing it declared outside the JSX block. */}
+                {/* FIX: separate step counter so section headers don't cause numbers to skip */}
                 {(() => {
                   let stepNum = 0;
                   return displayed.instructions.map((step, i) => {
-                    // Section headers render as a label; don't count them as steps
                     if (step.type === "section") {
                       return <p key={i} className="section-label">{step.text || "—"}</p>;
                     }
-
-                    // Only real steps get a number
                     stepNum++;
                     const text = typeof step === "string" ? step : step.text;
                     const images = typeof step === "string" ? [] : (step.images || []);
@@ -498,12 +548,9 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
                         <div><span className="step-num">{stepNum}</span>{text}</div>
                         {images.length > 0 && (
                           <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                            {/* Step images */}
                             {images.map((url, imgIndex) => (
                               <img
-                                key={imgIndex}
-                                src={url}
-                                alt={`Step ${stepNum}`}
+                                key={imgIndex} src={url} alt={`Step ${stepNum}`}
                                 onClick={() => setLightboxUrl(url)}
                                 style={{ width: "100%", maxHeight: "300px", objectFit: "cover", borderRadius: "8px", cursor: "zoom-in" }}
                               />
@@ -553,12 +600,12 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             onImageChange={setEditImageFile}
             onRemoveExisting={() => setRemoveExistingImage(true)}
             hidePhotoHeading={!!recipe.image_url && !removeExistingImage}
-            allRecipes={allRecipes} /* ← pass through for the link picker */
+            allRecipes={allRecipes}
           />
         </>
       )}
 
-      {/* Lightbox — clicking any image opens it here at full size */}
+      {/* Lightbox */}
       {lightboxUrl && (
         <div
           onClick={() => setLightboxUrl(null)}
@@ -568,15 +615,12 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
             zIndex: 1000, cursor: "zoom-out", padding: "24px",
           }}
         >
-          <img
-            src={lightboxUrl}
-            alt="Full size"
-            style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: "8px", objectFit: "contain" }}
-          />
+          <img src={lightboxUrl} alt="Full size"
+            style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: "8px", objectFit: "contain" }} />
         </div>
       )}
 
-      {/* Sub-recipe side panel — slides in from the right when a linked ingredient is clicked */}
+      {/* Sub-recipe side panel */}
       {subRecipe && (
         <div className="sub-panel-overlay" onClick={() => setSubRecipe(null)}>
           <div className="sub-panel" onClick={(e) => e.stopPropagation()}>
@@ -584,49 +628,34 @@ export default function DetailView({ recipe, onBack, onDeleted, onUpdated, onSav
               <p className="sub-panel-title">{subRecipe.title}</p>
               <button className="sub-panel-close" onClick={() => setSubRecipe(null)}>×</button>
             </div>
-
-            {/* Open full recipe button — navigates to that recipe's DetailView */}
             <div className="sub-panel-open-btn">
               <button
                 className="btn-primary"
                 style={{ width: "100%" }}
-                onClick={() => { setSubRecipe(null); onNavigate(subRecipe); }}
+                onClick={() => { setSubRecipe(null); navigate(`/recipe/${subRecipe.id}`); }}
               >
                 Open full recipe →
               </button>
             </div>
-
             <p className="section-heading">Ingredients</p>
             <ul className="detail-list">
               {subRecipe.ingredients.map((item, i) => {
                 if (item.type === "section") return <p key={i} className="section-label">{item.text}</p>;
-                return (
-                  <li key={i}>
-                    {typeof item === "string" ? item : formatIngredient(item)}
-                  </li>
-                );
+                return <li key={i}>{typeof item === "string" ? item : formatIngredient(item)}</li>;
               })}
             </ul>
-
             <p className="section-heading">Instructions</p>
             <ol className="detail-list" style={{ listStyle: "none" }}>
-              {/* FIX: same step counter fix as the main recipe view above —
-                  sub-recipe panel had the same array-index bug */}
               {(() => {
                 let stepNum = 0;
                 return subRecipe.instructions.map((step, i) => {
                   if (step.type === "section") return <p key={i} className="section-label">{step.text}</p>;
                   stepNum++;
                   const text = typeof step === "string" ? step : step.text;
-                  return (
-                    <li key={i}>
-                      <span className="step-num">{stepNum}</span>{text}
-                    </li>
-                  );
+                  return <li key={i}><span className="step-num">{stepNum}</span>{text}</li>;
                 });
               })()}
             </ol>
-
           </div>
         </div>
       )}
