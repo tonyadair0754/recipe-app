@@ -38,7 +38,6 @@ function Shell() {
   const collectionCount = displayedRecipes.length;
 
   // Called after a recipe is saved so the collection stays in sync.
-  // Auth users refetch from the backend; guests rely on AuthContext state.
   const handleSaved = useCallback(() => {
     if (!isGuest) loadRecipes();
     navigate("/collection");
@@ -89,58 +88,59 @@ function Shell() {
     );
   }
 
-  // /shared/:token is always accessible — render it outside the auth gate.
-  // We handle that route before the auth check below so anonymous visitors
-  // can view shared recipes without being redirected to the login screen.
-  // (The SharedRecipeView route is declared in the Routes block below, but
-  // the auth check would intercept it, so we let react-router handle it first
-  // by placing the auth redirect only on the routes that need protection.)
+  // The topbar is hidden on the auth screen because AuthView renders its own
+  // logo inside the card — showing the topbar too would duplicate "RecipeLens".
+  // It's also hidden on shared recipe pages (/shared/:token) for anonymous
+  // visitors who have no collection to navigate to.
+  const showTopbar = user || isGuest;
 
   return (
     <div className="app">
       <div className="accent-bar" />
-      <div className="topbar">
-        <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
-          <div className="logo-dot" />
-          RecipeLens
+
+      {showTopbar && (
+        <div className="topbar">
+          <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
+            <div className="logo-dot" />
+            RecipeLens
+          </div>
+          <div className="nav-right">
+            <button
+              className="nav-link"
+              onClick={() => navigate("/")}
+              style={{
+                color: window.location.pathname === "/" ? "#2d6a4f" : undefined,
+                fontWeight: window.location.pathname === "/" ? 500 : undefined,
+              }}
+            >
+              Add recipe
+            </button>
+            <button
+              className="nav-link"
+              onClick={() => navigate("/collection")}
+              style={{
+                color: window.location.pathname.startsWith("/collection") || window.location.pathname.startsWith("/recipe") ? "#2d6a4f" : undefined,
+                fontWeight: window.location.pathname.startsWith("/collection") || window.location.pathname.startsWith("/recipe") ? 500 : undefined,
+              }}
+            >
+              My collection ({collectionCount})
+            </button>
+            {isGuest ? (
+              <button className="nav-link" onClick={() => window.location.reload()}>Sign in</button>
+            ) : (
+              <button className="nav-link" onClick={handleLogout}>Sign out</button>
+            )}
+          </div>
         </div>
-        <div className="nav-right">
-          {/* Only show the main nav for authenticated/guest users, not on shared pages */}
-          {(user || isGuest) && (
-            <>
-              <button
-                className="nav-link"
-                onClick={() => navigate("/")}
-                style={{ color: window.location.pathname === "/" ? "#2d6a4f" : undefined, fontWeight: window.location.pathname === "/" ? 500 : undefined }}
-              >
-                Add recipe
-              </button>
-              <button
-                className="nav-link"
-                onClick={() => navigate("/collection")}
-                style={{ color: window.location.pathname.startsWith("/collection") || window.location.pathname.startsWith("/recipe") ? "#2d6a4f" : undefined, fontWeight: window.location.pathname.startsWith("/collection") || window.location.pathname.startsWith("/recipe") ? 500 : undefined }}
-              >
-                My collection ({collectionCount})
-              </button>
-            </>
-          )}
-          {isGuest ? (
-            <button className="nav-link" onClick={() => window.location.reload()}>Sign in</button>
-          ) : user ? (
-            <button className="nav-link" onClick={handleLogout}>Sign out</button>
-          ) : null}
-        </div>
-      </div>
+      )}
 
       <Routes>
-        {/* Public route — no auth needed */}
+        {/* Public route — no auth needed, works for anonymous visitors */}
         <Route path="/shared/:shareToken" element={<SharedRecipeView allRecipes={displayedRecipes} />} />
 
-        {/* Auth-gated routes */}
+        {/* Auth-gated routes — show the login screen if not signed in */}
         {!user && !isGuest ? (
-          <>
-            <Route path="*" element={<AuthView />} />
-          </>
+          <Route path="*" element={<AuthView />} />
         ) : (
           <>
             <Route
@@ -180,7 +180,8 @@ function Shell() {
 
 // ── App root ──
 // BrowserRouter must wrap everything that uses react-router hooks.
-// Shell is a child so it can call useNavigate().
+// Shell is a separate child component so it can call useNavigate(),
+// which only works inside a <BrowserRouter>.
 export default function App() {
   return (
     <BrowserRouter>
